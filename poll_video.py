@@ -62,6 +62,43 @@ def higgsfield_get(job_id: str) -> dict | None:
     return data[0] if isinstance(data, list) and data else data
 
 
+def extract_prompt(job: dict) -> str:
+    """Return the generation prompt recorded on a completed job, or "" if absent.
+
+    Higgsfield stores the submitted prompt under params.prompt for video jobs
+    (verified against `higgsfield generate list --json`); some job shapes use a
+    top-level "prompt" or an "input" object instead. Same lookup chain copy.py
+    uses. This is the value Content Matrix col F must record — without it,
+    produce.py --video falls back to logging the local mp4 path (bug #1).
+    """
+    if not isinstance(job, dict):
+        return ""
+    prompt = job.get("prompt")
+    for container in ("params", "input"):
+        if not prompt and isinstance(job.get(container), dict):
+            prompt = job[container].get("prompt")
+    return prompt or ""
+
+
+def build_produce_cmd(template, raw_mp4, final, json_file=None, pairs=None, prompt=""):
+    """Construct the produce.py --video argv.
+
+    NOTE: deliberately NO --no-log — this is OpenClaw's real-post path and must
+    keep writing the live Content Matrix row. The col-F fix (bug #1) is passing
+    the recovered generation --prompt so col F logs the prompt, not the mp4 path.
+    Omitting prompt leaves behavior exactly as before (produce.py falls back to
+    args.video), so the fix is backward-compatible.
+    """
+    cmd = [sys.executable, PRODUCE, template, "--video", str(raw_mp4), str(final)]
+    if prompt:
+        cmd += ["--prompt", prompt]
+    if json_file:
+        cmd += ["--json", json_file]
+    for pair in (pairs or []):
+        cmd += ["--set", pair]
+    return cmd
+
+
 def download(url: str, dest: Path):
     opener = urllib.request.build_opener(
         urllib.request.HTTPSHandler(context=_ssl_context())
@@ -134,11 +171,11 @@ def main():
 
     final = args.out or str(OUTPUT_DIR / f"{args.job_id}.mp4")
 
-    cmd = [sys.executable, PRODUCE, args.template, "--video", str(raw_mp4), final]
-    if args.json_file:
-        cmd += ["--json", args.json_file]
-    for pair in args.pairs:
-        cmd += ["--set", pair]
+    # Bug #1 fix: recover the generation prompt from the job record and pass it
+    # as --prompt so Content Matrix col F logs the prompt, not the local mp4 path.
+    prompt = extract_prompt(job)
+    cmd = build_produce_cmd(args.template, raw_mp4, final,
+                            json_file=args.json_file, pairs=args.pairs, prompt=prompt)
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:

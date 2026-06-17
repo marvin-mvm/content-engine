@@ -9,7 +9,8 @@
 > **Status:** the **reel caption chain (M4→M5)** is proven (Phase A1, job ACME-007, Nova
 > review, 0 Higgsfield credits) and **wrapped into a brief-driven runner** (`reel.py`, Phase A2
 > — see §1.0). The **image chain (M5→M6)** is proven across all 5 template families and
-> wrapped into `post.py` (Phase A3, 0 credits — see **§9**).
+> wrapped into `post.py` (Phase A3, 0 credits — see **§9**). The **M3 preflight gate**
+> (`preflight.py`, Phase A4) is the hard wall that protects the single A5 credit spend — see **§10**.
 >
 > **First proofs:** reel → `output/jobs/ACME-007/` (Nova "Metabolic Support Stack" review);
 > image → `output/jobs/ACME-008/` (Semaglutide compound feature), plus the A3 QC set in
@@ -333,3 +334,106 @@ line + class/COA chips on Labs product posts** · correct aspect · legible · n
 - ✅ **Reuse-bg = generic brand b-roll only.** Product/spokesperson heroes are **dynamic,
   per-SKU content** — they are generated as the post itself, never used as a `--bg-file`
   background (see gotcha I2).
+
+---
+
+## 10. Preflight gate (M3) — the hard wall before any Higgsfield spend (A4)
+
+> **What this is:** `preflight.py` — the mandatory pre-submit check that protects the **only**
+> credit spend in the plan (A5). It validates the *generation plan*, so it guards **every**
+> route (raw `higgsfield image/video`, `ms-dtc`, `product-photoshoot`, `produce.py --bg-prompt`).
+> **Standalone** by design (decided 2026-06-17, Operator): it does **not** modify the shared
+> OpenClaw scripts, so the live system is untouched. It **never** calls a generator — the only
+> network it does is a best-effort, non-fatal `generate list` **read** for the reuse inventory.
+> A6 will wrap it as the `acme-preflight` skill.
+
+**The contract:** ANY failed check → **exit 1**, reasons printed to stderr, **stdout stays
+empty** (no go-token). All checks pass → **exit 0** + `PREFLIGHT-OK` printed to stdout. So the
+submit step can hard-gate on the token; nothing can mistake a block for a pass.
+
+### 10.1 The checks (all must pass — `python3 tests/test_preflight.py` proves block + pass)
+
+1. **bg_policy honored** — `plain`/`reuse` → BLOCK (render free / `--bg-file`, 0 credits); only `generate` proceeds.
+2. **Brand Prompt Block prepended verbatim** — IMAGE block for `image`/`dtc`/`product`, VIDEO block for `video`. The submitted prompt must `startswith()` it exactly.
+3. **No rendered text in the prompt** — flags `text/caption/headline/…` and any quoted literal in the *creative* part (after `::`); negations ("no text") are allowed. Text is burned in at M4/M5.
+4. **Correct route** — person/Nova/UGC/ad content on a raw `image`/`video` route → BLOCK (use `--route dtc`); product photography → `--route product`; medium↔model mismatch (e.g. `seedance_2_0` on an image route) → BLOCK.
+5. **Aspect matches template** — 9:16 story · 4:5 carousel/compound · 1:1 callout (or a valid ratio when no template is given).
+6. **Video → `--no-wait`** — video jobs never block on `--wait` (SOUL §17).
+7. **Reuse check acknowledged** — requires `--reuse-checked`; the gate first prints the `asset_cache/` + completed-jobs inventory (incl. the Metabolic Support Stack job `7d01b600-…`) so the ack is informed.
+
+### 10.2 How to run it (the A5 pre-submit step)
+
+```bash
+# 1. Build the prompt so the brand block is verbatim BY CONSTRUCTION:
+P="$(python3 preflight.py --print-block image) cold-chain peptide vial on a deep-forest \
+surface, soft side lighting, generous negative space, editorial product still"
+
+# 2. Gate the plan. Only submit if it exits 0 / prints PREFLIGHT-OK:
+python3 preflight.py --route image --model gpt_image_2 --aspect 9:16 \
+  --template templates/src/story-reel-dark.html --bg-policy generate --reuse-checked \
+  --prompt "$P"  &&  echo "→ clear to call higgsfield"   # only runs on PASS
+
+# Video b-roll (note --no-wait is mandatory):
+V="$(python3 preflight.py --print-block video) clinical lab b-roll, slow dolly across vials"
+python3 preflight.py --route video --model seedance_2_0 --aspect 9:16 --no-wait \
+  --reuse-checked --prompt "$V"
+```
+
+`--print-block image|video` emits the exact block so you never hand-paste it. The gate is
+0-credit; **A5 is the only place a real `higgsfield generate` runs, and only after this passes.**
+
+---
+
+## 11. Publishing to Blotato (F1) — prototyped + proven 2026-06-17
+
+> **Status:** the publish flow is **proven end-to-end** (Operator signed off "publishing is a
+> success") via a **supervised, semi-manual** run — NOT yet the finished one-command module.
+> First real publish: **ACME-011** BPC-157 carousel → **X live** + **TikTok scheduled**, 0 credits.
+
+### 11.1 The flow that works
+
+```
+job folder PNGs  →  blotato.py upload <file>  →  public URL  →  blotato.py publish (per platform)
+   (local)            (presigned PUT)            (mediaUrls)      X / TikTok, immediate or --schedule
+```
+
+1. **Upload each media file** (the bridge — `create_post` needs PUBLIC urls, our renders are local):
+   `python3 blotato.py upload output/jobs/ACME-NNN/ACME-NNN-slide-01.png` → prints a public URL.
+2. **Publish per platform** with the right treatment + `--dry-run` FIRST to verify the payload:
+   ```bash
+   # X (Twitter) — single opinion tweet, cover image, 0 hashtags:
+   python3 blotato.py publish "<≤280-char opinion>" --account-id 18688 --platform twitter --media-url <coverURL>
+   # TikTok — photo carousel, scheduled, public, AI-flagged (defaults applied automatically):
+   python3 blotato.py publish "<caption + 3–5 hashtags>" --account-id 43061 --platform tiktok \
+     --media-url <s1> --media-url <s2> ... --media-url <s5> --schedule 2026-06-17T20:53:39Z
+   ```
+   Connected accounts: **TikTok 43061 · X/Twitter 18688 · YouTube 37252** (`@acmelabs`). Instagram
+   NOT connected yet (Operator's manual Blotato step). Get current IDs: `blotato.py accounts`.
+
+### 11.2 `blotato.py` changes made in F1 (backward-compatible; OpenClaw still works)
+
+- **`upload FILE`** — new: presigned-URL PUT → prints `publicUrl`. The missing local→public bridge.
+- **`--dry-run`** on publish — prints the exact payload, posts nothing. **Use it every time** (it
+  caught a real empty-`mediaUrl` bug pre-flight, see P5).
+- **Bug fixes:** `scheduleTime` → **`scheduledTime`** (scheduling silently no-op'd before);
+  `post-status` arg `id` → **`postSubmissionId`**.
+- **TikTok required fields** auto-applied (privacyLevel=PUBLIC_TO_EVERYONE, isAiGenerated=true,
+  isYourBrand=true, the rest false) + `--privacy-level` override.
+- **`--also TEXT`** (repeatable) → `additionalPosts` (thread). ⚠️ see P1 — doesn't chain on X.
+
+### 11.3 Findings & gotchas (READ BEFORE NEXT PUBLISH)
+
+| # | Finding | Detail / fix |
+|---|---------|--------------|
+| P1 | **X threads don't chain via Blotato** | `--also`/`additionalPosts` were silently dropped — only the main tweet posted, yet Blotato reported `published`. **For X use a single ≤280-char opinion tweet** (the guide's primary X rule anyway). Don't promise "a thread" in tweet 1. |
+| P2 | **YouTube = video uploads only** | Blotato's YouTube needs `title`+`privacyStatus` (video). **No community/image posts** — a still-image carousel cannot go to YouTube. YouTube is for the video pipeline. |
+| P3 | **No first-comment field** | Blotato `create_post` has no first-comment param. SOUL wants 20–30 hashtags in the first comment on IG/TikTok → for now **hashtags go in the caption body** (TikTok 3–5; X 0). Revisit if Blotato adds it. |
+| P4 | **Can't delete a published post** | Blotato has `delete_schedule` (scheduled only), no delete-published API. A bad live post must be removed **manually on the platform**. → dry-run + visual check before going live. |
+| P5 | **Shell arrays are 1-indexed here** | `${U[0]}` was empty → an empty `mediaUrl` + a dropped slide. `--dry-run` caught it. Use explicit per-file vars, not `${arr[0]}`. |
+| P6 | **`published`≠fully posted** | A `200/published` from `create_post` confirms only the MAIN post. **Visually verify** the live post (thread/carousel) — the API won't tell you a sub-post failed. |
+
+### 11.4 Still to build (the real F1 module)
+
+`publish.py` runner (job folder → upload → per-platform publish, **dry-run by default, `--go` to
+post**, pre-publish compliance gate, record `published_posts`), `copy.py` per-platform captions
+(bug #2: add x/threads/facebook/linkedin), Instagram connection, post-status tracking.
