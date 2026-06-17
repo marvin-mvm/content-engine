@@ -10,10 +10,8 @@ Usage:
   blotato.py generate         TEMPLATE_ID PROMPT [--title TEXT] [--timeout N] [--raw]
   blotato.py visual-status    VISUAL_ID           [--raw]
   blotato.py source           URL_OR_TEXT [--type TYPE] [--instructions TEXT] [--timeout N] [--raw]
-  blotato.py upload           FILE                [--raw]
-  blotato.py publish          TEXT --account-id ID --platform P [--media-url URL ...]
-                               [--also TEXT ...] [--schedule DATETIME] [--title T]
-                               [--privacy-level LEVEL] [--dry-run] [--raw]
+  blotato.py publish          TEXT [--account-id ID] [--platform P] [--media-url URL ...]
+                               [--schedule DATETIME] [--raw]
   blotato.py post-status      POST_ID             [--raw]
   blotato.py schedules
   blotato.py user
@@ -22,18 +20,12 @@ generate:       Create image, carousel, slideshow, or AI video from a template.
                 Polls until the visual is rendered and returns the final URL.
 source:         Extract content/transcript from a URL (YouTube, TikTok, article, etc.)
                 for use as generation input. Polls until complete.
-upload:         Upload a LOCAL image/video to Blotato and print its public URL
-                (presigned PUT). Required bridge: produce.py/post.py write local
-                files, but publish needs public mediaUrls.
-publish:        Post to Instagram/TikTok/X/etc. immediately or at a scheduled time.
-                mediaUrls must be public URLs (use `upload` for local files). Pass
-                multiple --media-url for a carousel; --also for thread posts.
-                --dry-run prints the payload without posting.
+publish:        Post to Instagram/TikTok/LinkedIn/etc. immediately or at a scheduled time.
+                mediaUrls must be public URLs (e.g. the URL returned by generate).
 """
 
 import argparse
 import json
-import mimetypes
 import os
 import ssl
 import sys
@@ -307,61 +299,7 @@ def cmd_source(url_or_text, source_type, instructions, timeout, raw, api_key):
     sys.exit(f"ERROR: Source {source_id} timed out after {timeout}s")
 
 
-def cmd_upload(file_path, raw, api_key):
-    """Upload a LOCAL file to Blotato and print its public URL.
-
-    blotato_create_post needs publicly accessible mediaUrls; our rendered assets
-    are local files. Flow: create_presigned_upload_url -> PUT raw bytes -> publicUrl.
-    This is the bridge from a job-folder PNG/mp4 to a postable URL.
-    """
-    p = Path(file_path)
-    if not p.exists():
-        sys.exit(f"ERROR: file not found: {file_path}")
-
-    presign = mcp_call("blotato_create_presigned_upload_url", {"filename": p.name}, api_key)
-    if not isinstance(presign, dict):
-        sys.exit(f"ERROR: unexpected presign response: {presign}")
-    presigned_url = presign.get("presignedUrl") or presign.get("uploadUrl")
-    public_url = presign.get("publicUrl") or presign.get("url")
-    if not presigned_url or not public_url:
-        sys.exit(f"ERROR: no presignedUrl/publicUrl in response: {presign}")
-
-    content_type = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
-    print(f"[acme-blotato] uploading {p.name} ({content_type})...", file=sys.stderr)
-    req = urllib.request.Request(
-        presigned_url, data=p.read_bytes(), method="PUT",
-        headers={"Content-Type": content_type},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=180, context=_ssl_context()) as resp:
-            status = resp.status
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")
-        sys.exit(f"ERROR: upload PUT failed {e.code}: {body[:300]}")
-    except urllib.error.URLError as e:
-        sys.exit(f"ERROR: upload network failure: {e}")
-
-    if raw:
-        print(json.dumps({"publicUrl": public_url, "httpStatus": status}, indent=2))
-    else:
-        print(public_url)
-
-
-# TikTok requires these fields on every post (per blotato_list_accounts). Sensible
-# brand defaults; AI-generated is true because our visuals are produced by the engine.
-TIKTOK_DEFAULTS = {
-    "privacyLevel": "PUBLIC_TO_EVERYONE",
-    "disabledComments": False,
-    "disabledDuet": False,
-    "disabledStitch": False,
-    "isBrandedContent": False,
-    "isYourBrand": True,
-    "isAiGenerated": True,
-}
-
-
-def cmd_publish(text, account_id, platform, media_urls, schedule, also, title,
-                privacy_level, dry_run, raw, api_key):
+def cmd_publish(text, account_id, platform, media_urls, schedule, raw, api_key):
     if not account_id:
         sys.exit("ERROR: --account-id required. Run `acme-blotato accounts` to get your account IDs.")
     if not platform:
@@ -374,29 +312,15 @@ def cmd_publish(text, account_id, platform, media_urls, schedule, also, title,
         "mediaUrls": media_urls or [],
     }
     if schedule:
-        args["scheduledTime"] = schedule           # was "scheduleTime" — wrong key, scheduling silently no-op'd
-    if also:                                        # thread (Twitter/Bluesky/Threads): each extra post
-        args["additionalPosts"] = [{"text": t} for t in also]
-    if platform == "tiktok":
-        for k, v in TIKTOK_DEFAULTS.items():
-            args.setdefault(k, v)
-        if privacy_level:
-            args["privacyLevel"] = privacy_level
-    if platform == "youtube" and title:
-        args["title"] = title
+        args["scheduleTime"] = schedule
 
-    if dry_run:                                     # show the exact payload, post NOTHING
-        print(json.dumps(args, ensure_ascii=False, indent=2))
-        return
-
-    print(f"[acme-blotato] publishing to {platform} account={account_id}"
-          f"{' (scheduled ' + schedule + ')' if schedule else ''}...", file=sys.stderr)
+    print(f"[acme-blotato] publishing to {platform} account={account_id}...", file=sys.stderr)
     result = mcp_call("blotato_create_post", args, api_key)
     if raw:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
     out = {
-        "id": (result.get("id") or result.get("postId") or result.get("postSubmissionId")) if isinstance(result, dict) else None,
+        "id": result.get("id") or result.get("postId") if isinstance(result, dict) else None,
         "status": result.get("status") if isinstance(result, dict) else None,
         "platform": platform,
         "scheduled_for": schedule,
@@ -406,7 +330,7 @@ def cmd_publish(text, account_id, platform, media_urls, schedule, also, title,
 
 
 def cmd_post_status(post_id, raw, api_key):
-    result = mcp_call("blotato_get_post_status", {"postSubmissionId": post_id}, api_key)
+    result = mcp_call("blotato_get_post_status", {"id": post_id}, api_key)
     if raw:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
@@ -482,24 +406,13 @@ def main():
     p.add_argument("--timeout", type=int, default=DEFAULT_SRC_TIMEOUT)
     p.add_argument("--raw", action="store_true")
 
-    # upload
-    p = sub.add_parser("upload", help="Upload a LOCAL file to Blotato; prints its public URL for use as --media-url")
-    p.add_argument("file", help="Local path to an image or video")
-    p.add_argument("--raw", action="store_true")
-
     # publish
     p = sub.add_parser("publish", help="Publish or schedule a post to a connected social account")
     p.add_argument("text", help="Post caption/body text")
     p.add_argument("--account-id", required=True, help="Account ID from `accounts` command")
     p.add_argument("--platform", required=True, help="Platform: instagram, tiktok, linkedin, twitter, facebook, youtube, etc.")
-    p.add_argument("--media-url", action="append", dest="media_urls", default=[], help="Public media URL (repeatable for multiple images / carousel)")
-    p.add_argument("--also", action="append", default=[], help="Additional thread post text (repeatable; Twitter/Bluesky/Threads)")
+    p.add_argument("--media-url", action="append", dest="media_urls", default=[], help="Public media URL (repeatable for multiple images)")
     p.add_argument("--schedule", help="Schedule time in ISO 8601 format (e.g. 2026-06-01T09:00:00Z). Omit to post immediately.")
-    p.add_argument("--title", help="Title (required for YouTube; optional elsewhere)")
-    p.add_argument("--privacy-level", dest="privacy_level",
-                   choices=["SELF_ONLY", "PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "FOLLOWER_OF_CREATOR"],
-                   help="TikTok privacy level (default PUBLIC_TO_EVERYONE)")
-    p.add_argument("--dry-run", action="store_true", help="Print the exact post payload and exit — posts NOTHING")
     p.add_argument("--raw", action="store_true")
 
     # post-status
@@ -526,11 +439,8 @@ def main():
         cmd_visual_status(args.visual_id, args.raw, key)
     elif args.cmd == "source":
         cmd_source(args.url_or_text, args.source_type, args.instructions, args.timeout, args.raw, key)
-    elif args.cmd == "upload":
-        cmd_upload(args.file, args.raw, key)
     elif args.cmd == "publish":
-        cmd_publish(args.text, args.account_id, args.platform, args.media_urls, args.schedule,
-                    args.also, args.title, args.privacy_level, args.dry_run, args.raw, key)
+        cmd_publish(args.text, args.account_id, args.platform, args.media_urls, args.schedule, args.raw, key)
     elif args.cmd == "post-status":
         cmd_post_status(args.post_id, args.raw, key)
     elif args.cmd == "schedules":
