@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1080, height=1350" />
+  <title>Acme — Carousel Slide (Light, 1080×1350)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600;1,700&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 1080px; height: 1350px; overflow: hidden; }
+  </style>
+</head>
+<body>
+
+<div style="position: relative; width: 1080px; height: 1350px; background: #F2EDE4; overflow: hidden; font-family: 'DM Sans', sans-serif; color: #1A2820;">
+
+  <!-- Radial wash -->
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: radial-gradient(ellipse 90% 70% at 50% 35%, #F2EDE4 0%, #DCE6D7 60%, #C8DDD0 100%);"></div>
+
+  <!-- Slide number (top-left) + green underline -->
+  <div style="position: absolute; top: 64px; left: 72px;">
+    <span style="font-family: 'DM Mono', monospace; font-size: 26px; letter-spacing: 0.1em; color: #2D6A4A;">{{SLIDE_NUM}} / {{SLIDE_TOTAL}}</span>
+    <div aria-hidden="true" style="margin-top: 8px; width: 40px; height: 2px; background: #3D9E6E;"></div>
+  </div>
+
+  <!-- Brand (top-right) -->
+  <div style="position: absolute; top: 60px; right: 72px; display: flex; align-items: center; gap: 14px;">
+    <span style="font-family: 'DM Mono', monospace; font-size: 16px; letter-spacing: 0.14em; color: #1A2820; text-transform: uppercase;">{{BRAND_NAME}}</span>
+    <div style="width: 52px; height: 52px; border: 2px solid #2D6A4A; border-radius: 10px; background: rgba(242, 237, 228, 0.85); display: flex; align-items: center; justify-content: center;">
+      <img src="../../assets/acme-leaf.svg" alt="Acme" style="width: 32px; height: 32px; object-fit: contain;" />
+    </div>
+  </div>
+
+  <!-- Eyebrow -->
+  <div style="position: absolute; top: 200px; left: 72px; right: 72px; font-family: 'DM Mono', monospace; font-size: 22px; letter-spacing: 0.24em; color: #2D6A4A; text-transform: uppercase;">{{EYEBROW}}</div>
+
+  <!-- Headline with italic emphasis line -->
+  <h1 style="position: absolute; top: 250px; left: 72px; right: 72px; margin: 0; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 76px; line-height: 1.08; letter-spacing: -0.02em; color: #1A2820;">
+    <span style="display: block;">{{HEAD_1}}</span>
+    <span style="display: block; font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 700; color: #3D9E6E; font-size: 84px;">{{HEAD_2_ITALIC}}</span>
+    <span style="display: block;">{{HEAD_3}}</span>
+  </h1>
+
+  <!-- Hairline -->
+  <div aria-hidden="true" style="position: absolute; top: 560px; left: 72px; right: 72px; height: 1px; background: rgba(45,106,74,0.25);"></div>
+
+  <!-- Body copy -->
+  <div style="position: absolute; top: 610px; left: 72px; right: 72px; font-family: 'DM Sans', sans-serif; font-weight: 400; font-size: 38px; line-height: 1.5; color: #1A2820;">{{BODY}}</div>
+
+  <!-- Footer: swipe indicator + handle -->
+  <div style="position: absolute; bottom: 72px; left: 72px; right: 72px; display: flex; align-items: center; justify-content: space-between;">
+    <span style="font-family: 'DM Mono', monospace; font-size: 20px; letter-spacing: 0.14em; color: #6B8F7A; text-transform: uppercase;">{{SWIPE_LABEL}}</span>
+    <span style="font-family: 'DM Mono', monospace; font-size: 20px; letter-spacing: 0.18em; color: #2D6A4A;">{{HANDLE}}</span>
+  </div>
+
+</div>
+
+</body>
+</html>

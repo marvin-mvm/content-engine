@@ -1,0 +1,49 @@
+# Acme content-engine .gitignore — scoped to the acme/ subtree.
+# NOTE: the git repo root is the workspace, not acme/. The workspace-root
+# .gitignore already covers .env, *credentials*.json, .openclaw/, __pycache__/,
+# *.pyc and .DS_Store globally. Those secret/runtime rules are RE-STATED below
+# for defense-in-depth, plus engine-specific transient/large-file rules.
+
+# --- Secrets & credentials (NEVER commit) ---
+.env
+.env.*
+*credentials*.json
+acme-google-credentials.json
+
+# --- OpenClaw runtime state (tokens, sessions, queues, skill origin) ---
+.openclaw/
+
+# --- Python cache ---
+__pycache__/
+*.pyc
+
+# --- Generated / transient output (large, regenerable) ---
+output/
+asset_cache/
+memory/
+logs/
+
+# --- Rendered video (large; regenerable; kept on disk for local use, not in git) ---
+*.mp4
+
+# --- Proof / preview render artifacts ---
+overlay_preview_*.jpg
+font_proof.jpg
+layout_proof.jpg
+*_proof.*
+
+# --- Local non-engine artifacts (kept on disk, NOT version-controlled) ---
+# Reversible: any of these can be force-added later with `git add -f`.
+.agents/
+skills/.openclaw-install-backups/
+skills/higgsfield-*
+skills/nano-banana-*
+theme_*.png
+website_*.png
+glp1_product.jpg
+selank_vial.webp
+caption_composition.html
+caption_data.json
+
+# --- OS cruft ---
+.DS_Store

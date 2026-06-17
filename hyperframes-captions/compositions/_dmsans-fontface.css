@@ -1,0 +1,15 @@
+/* DM Sans — Acme brand body/caption font. Variable upright (100–1000) + italic. */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 100 1000;
+  font-display: block;
+  src: url('../fonts/DMSans-upright.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'DM Sans';
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url('../fonts/DMSans-400i.woff2') format('woff2');
+}

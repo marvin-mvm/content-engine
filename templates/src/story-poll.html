@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1080, height=1920" />
+  <title>Acme — Story Poll (1080×1920 native)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600;1,700&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 1080px; height: 1920px; overflow: hidden; }
+  </style>
+</head>
+<body>
+
+<div style="position: relative; width: 1080px; height: 1920px; background: #1A2E1E; overflow: hidden; padding: 80px; font-family: 'DM Sans', sans-serif; color: #F2EDE4;">
+
+  <!-- Tag / eyebrow -->
+  <div style="font-family: 'DM Mono', monospace; font-size: 32px; letter-spacing: 0.24em; color: #3D9E6E; text-transform: uppercase;">
+    {{STORY_TAG}}
+  </div>
+
+  <!-- Hook headline -->
+  <h1 style="margin-top: 60px; font-weight: 700; font-size: 80px; line-height: 1.1; letter-spacing: -0.02em;">
+    {{STORY_HOOK_1}} <br>
+    <span style="font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 700; color: #3D9E6E; font-size: 90px;">{{STORY_HOOK_2_ITALIC}}</span> <br>
+    {{STORY_HOOK_3}}
+  </h1>
+
+  <!-- Central zone — reserved for native IG poll sticker or image -->
+  <div style="position: absolute; top: 500px; bottom: 350px; left: 80px; right: 80px; display: flex; align-items: center; justify-content: center;">
+    <!-- Place native Instagram poll sticker or background image here -->
+  </div>
+
+  <!-- A/B poll option anchors -->
+  <div style="position: absolute; bottom: 120px; left: 80px; right: 80px; display: flex; gap: 30px;">
+    <div style="flex: 1; background: #2D6A4A; padding: 40px 20px; text-align: center; font-weight: 700; font-size: 36px; color: #F2EDE4; border-radius: 20px; text-transform: uppercase;">
+      {{POLL_OPTION_A}}
+    </div>
+    <div style="flex: 1; border: 4px solid #3D9E6E; padding: 40px 20px; text-align: center; font-weight: 700; font-size: 36px; color: #3D9E6E; border-radius: 20px; text-transform: uppercase;">
+      {{POLL_OPTION_B}}
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

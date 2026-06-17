@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1080, height=1350" />
+  <title>Acme — Static Compound Feature (Light, 1080×1350)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600;1,700&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 1080px; height: 1350px; overflow: hidden; }
+  </style>
+</head>
+<body>
+
+<div style="position: relative; width: 1080px; height: 1350px; background: #F2EDE4; overflow: hidden; font-family: 'DM Sans', sans-serif; color: #1A2820;">
+
+  <!-- Radial wash -->
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: radial-gradient(ellipse 80% 70% at 50% 40%, #F2EDE4 0%, #DCE6D7 60%, #C8DDD0 100%);"></div>
+
+  <!-- Left accent bar -->
+  <div aria-hidden="true" style="position: absolute; top: 0; left: 0; bottom: 0; width: 6px; background: #3D9E6E;"></div>
+
+  <!-- Brand bar (top) -->
+  <div style="position: absolute; top: 64px; left: 72px; right: 72px; display: flex; align-items: center; justify-content: space-between;">
+    <div style="display: flex; align-items: center; gap: 16px;">
+      <div style="width: 56px; height: 56px; border: 2px solid #2D6A4A; border-radius: 10px; background: rgba(242, 237, 228, 0.85); display: flex; align-items: center; justify-content: center;">
+        <img src="../../assets/acme-leaf.svg" alt="Acme" style="width: 34px; height: 34px; object-fit: contain;" />
+      </div>
+      <span style="font-family: 'DM Mono', monospace; font-size: 18px; letter-spacing: 0.16em; color: #1A2820; text-transform: uppercase;">{{BRAND_NAME}}</span>
+    </div>
+    <span style="font-family: 'DM Mono', monospace; font-size: 14px; letter-spacing: 0.18em; color: #2D6A4A; border: 1px solid rgba(45,106,74,0.45); border-radius: 999px; padding: 7px 16px; text-transform: uppercase;">{{CLASS_CHIP}}</span>
+  </div>
+
+  <!-- Eyebrow -->
+  <div style="position: absolute; top: 250px; left: 72px; font-family: 'DM Mono', monospace; font-size: 22px; letter-spacing: 0.24em; color: #2D6A4A; text-transform: uppercase;">{{EYEBROW}}</div>
+
+  <!-- Compound name -->
+  <h1 style="position: absolute; top: 300px; left: 72px; right: 72px; margin: 0; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 110px; line-height: 1.0; letter-spacing: -0.02em; color: #1A2820;">{{COMPOUND}}</h1>
+
+  <!-- Italic descriptor line -->
+  <div style="position: absolute; top: 430px; left: 72px; right: 72px; font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 600; font-size: 56px; line-height: 1.1; color: #2D6A4A;">{{DESCRIPTOR}}</div>
+
+  <!-- Hairline -->
+  <div aria-hidden="true" style="position: absolute; top: 540px; left: 72px; right: 72px; height: 1px; background: rgba(45,106,74,0.25);"></div>
+
+  <!-- Spec rows -->
+  <div style="position: absolute; top: 580px; left: 72px; right: 72px; display: flex; flex-direction: column; gap: 28px;">
+    <div style="display: flex; align-items: baseline; gap: 20px;">
+      <div style="width: 14px; height: 14px; border: 2px solid #2D6A4A; border-radius: 50%; flex-shrink: 0; margin-top: 6px;"></div>
+      <span style="font-family: 'DM Sans', sans-serif; font-weight: 400; font-size: 36px; line-height: 1.4; color: #1A2820;">{{SPEC_1}}</span>
+    </div>
+    <div style="display: flex; align-items: baseline; gap: 20px;">
+      <div style="width: 14px; height: 14px; border: 2px solid #2D6A4A; border-radius: 50%; flex-shrink: 0; margin-top: 6px;"></div>
+      <span style="font-family: 'DM Sans', sans-serif; font-weight: 400; font-size: 36px; line-height: 1.4; color: #1A2820;">{{SPEC_2}}</span>
+    </div>
+    <div style="display: flex; align-items: baseline; gap: 20px;">
+      <div style="width: 14px; height: 14px; border: 2px solid #2D6A4A; border-radius: 50%; flex-shrink: 0; margin-top: 6px;"></div>
+      <span style="font-family: 'DM Sans', sans-serif; font-weight: 400; font-size: 36px; line-height: 1.4; color: #1A2820;">{{SPEC_3}}</span>
+    </div>
+  </div>
+
+  <!-- Spec line (mono) -->
+  <div style="position: absolute; bottom: 360px; left: 72px; right: 72px; font-family: 'DM Mono', monospace; font-size: 24px; letter-spacing: 0.06em; color: #2D6A4A;">{{SPEC_LINE}}</div>
+
+  <!-- Price + COA chip row -->
+  <div style="position: absolute; bottom: 250px; left: 72px; right: 72px; display: flex; align-items: center; gap: 24px;">
+    <span style="font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 64px; color: #1A2820;">{{PRICE}}</span>
+    <span style="font-family: 'DM Mono', monospace; font-size: 16px; letter-spacing: 0.16em; color: #2D6A4A; border: 1px solid rgba(45,106,74,0.45); border-radius: 999px; padding: 8px 18px;">{{COA_CHIP}}</span>
+  </div>
+
+  <!-- Bottom bar: RUO + handle -->
+  <div style="position: absolute; bottom: 72px; left: 72px; right: 72px; display: flex; align-items: center; justify-content: space-between;">
+    <span style="font-family: 'DM Mono', monospace; font-size: 18px; letter-spacing: 0.14em; color: #2D6A4A; border: 1px solid rgba(45,106,74,0.4); border-radius: 999px; padding: 8px 18px;">{{RUO_LINE}}</span>
+    <span style="font-family: 'DM Mono', monospace; font-size: 22px; letter-spacing: 0.18em; color: #2D6A4A;">{{HANDLE}}</span>
+  </div>
+
+</div>
+
+</body>
+</html>

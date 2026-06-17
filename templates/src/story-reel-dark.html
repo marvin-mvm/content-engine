@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1080, height=1920" />
+  <title>Acme — Story / Reel Production (1080×1920 native)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600;1,700&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 1080px; height: 1920px; overflow: hidden; }
+  </style>
+</head>
+<body>
+
+<div style="position: relative; width: 1080px; height: 1920px; background: #1A2E1E; overflow: hidden; font-family: 'DM Sans', sans-serif; color: #F2EDE4;">
+
+  <!-- Radial vignette -->
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: radial-gradient(ellipse 70% 60% at 50% 45%, #243a28 0%, #1A2E1E 60%, #0F1A0F 100%);"></div>
+
+  <!-- Top scrim -->
+  <div aria-hidden="true" style="position: absolute; top: 0; left: 0; right: 0; height: 540px; background: linear-gradient(to bottom, rgba(10, 20, 12, 0.78) 0%, rgba(10, 20, 12, 0.4) 50%, transparent 100%); pointer-events: none;"></div>
+
+  <!-- Top-right logo badge -->
+  <div style="position: absolute; top: 60px; right: 60px; display: flex; flex-direction: column; align-items: center; gap: 12px;">
+    <div style="width: 80px; height: 80px; border: 2px solid #3D9E6E; border-radius: 12px; background: rgba(26, 46, 30, 0.85); display: flex; align-items: center; justify-content: center;">
+      <img src="../../assets/acme-leaf.svg" alt="Acme" style="width: 50px; height: 50px; object-fit: contain;" />
+    </div>
+    <span style="font-family: 'DM Mono', monospace; font-size: 16px; letter-spacing: 0.15em; color: #F2EDE4; text-transform: uppercase;">{{BRAND_NAME}}</span>
+  </div>
+
+  <!-- Hook zone: eyebrow + headline -->
+  <div style="position: absolute; top: 80px; left: 60px; right: 280px;">
+    <div style="font-family: 'DM Mono', monospace; font-size: 24px; letter-spacing: 0.2em; color: #3D9E6E; margin-bottom: 40px; text-transform: uppercase;">{{EYEBROW}}</div>
+    <h1 style="margin: 0; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 88px; line-height: 1.1; letter-spacing: -0.02em; color: #F2EDE4;">
+      <span style="display: block;">{{HOOK_LINE_1}}</span>
+      <span style="display: block; font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 700; color: #3D9E6E; font-size: 96px; letter-spacing: -0.01em;">{{HOOK_LINE_2_ITALIC}}</span>
+      <span style="display: block;">{{HOOK_LINE_3}}</span>
+    </h1>
+  </div>
+
+  <!-- Centre subtitle -->
+  <div style="position: absolute; bottom: 450px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; padding: 0 80px; text-shadow: 0 4px 20px rgba(0, 0, 0, 0.95);">
+    <div style="background: rgba(10, 20, 12, 0.55); border-radius: 20px; padding: 24px 40px; font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 55px; color: #F2EDE4; text-align: center; line-height: 1.3;">
+      {{SUBTITLE_TEXT}}
+    </div>
+  </div>
+
+  <!-- Bottom scrim -->
+  <div aria-hidden="true" style="position: absolute; bottom: 0; left: 0; right: 0; height: 350px; background: linear-gradient(to top, rgba(10, 20, 12, 0.9) 0%, rgba(10, 20, 12, 0.5) 50%, transparent 100%); pointer-events: none;"></div>
+
+  <!-- Bottom bar: CTA + handle -->
+  <div style="position: absolute; bottom: 120px; left: 60px; right: 60px; display: flex; align-items: center; justify-content: space-between;">
+    <div style="background: #2D6A4A; border-radius: 40px; padding: 20px 40px; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 32px; color: #F2EDE4; letter-spacing: 0.04em;">
+      {{CTA_LABEL}} →
+    </div>
+    <span style="font-family: 'DM Mono', monospace; font-size: 24px; letter-spacing: 0.18em; color: #7BA086;">{{HANDLE}}</span>
+  </div>
+
+</div>
+
+</body>
+</html>

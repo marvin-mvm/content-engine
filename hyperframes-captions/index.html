@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #1a2e1e;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Acme caption host. Default reels are 1080x1920 (9:16) — set those dims
+      and the caption safe-zone for portrait per design.md. This scaffold embeds
+      the brand-rebranded caption component (DM Sans + Cormorant Garamond) over a
+      Deep Forest background as a working reference / font proof.
+    -->
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="8"
+      data-width="1920"
+      data-height="1080"
+    >
+      <div
+        id="captions"
+        class="clip"
+        data-composition-id="caption-editorial-emphasis"
+        data-start="0"
+        data-duration="8"
+        data-track-index="0"
+        data-composition-src="compositions/components/caption-editorial-emphasis.html"
+        style="position: absolute; inset: 0;"
+      ></div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = gsap.timeline({ paused: true });
+    </script>
+  </body>
+</html>
