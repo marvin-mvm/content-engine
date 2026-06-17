@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=1920, height=1080" />
+    <meta name="viewport" content="width=1080, height=1920" />
     <title>Editorial Emphasis</title>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
     <style>
@@ -31,30 +31,24 @@
 
       html,
       body {
-        width: 1920px;
-        height: 1080px;
+        width: 1080px;
+        height: 1920px;
         margin: 0;
         overflow: hidden;
         background: transparent;
         font-family: "DM Sans", sans-serif;
       }
 
+      /* Transparent captions-only overlay (portrait 1080x1920). The background
+         video, audio and contrast scrim live in the root composition (index.html),
+         NOT here — keeps this component reusable per design.md. */
       #editorial-emphasis {
         pointer-events: none;
         position: relative;
-        width: 1920px;
-        height: 1080px;
+        width: 1080px;
+        height: 1920px;
         overflow: hidden;
         background: transparent;
-      }
-
-      #bg-video {
-        position: absolute;
-        inset: 0;
-        z-index: 1;
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
       }
 
       .caption-layer {
@@ -65,12 +59,13 @@
         transform: translateZ(0);
       }
 
+      /* Zone 2 (design.md): lower-middle, ~600-700px from the bottom on portrait. */
       .safe-zone {
         position: absolute;
-        top: 580px;
-        left: 60px;
-        width: 1800px;
-        height: 430px;
+        top: 1260px;
+        left: 70px;
+        width: 940px;
+        height: 560px;
         display: flex;
         align-items: flex-start;
         justify-content: flex-start;
@@ -89,43 +84,54 @@
       .caption-line {
         display: flex;
         align-items: baseline;
-        gap: 14px;
-        line-height: 1.1;
+        gap: 16px;
+        line-height: 1.05;
         white-space: nowrap;
       }
 
       .caption-line + .caption-line {
-        margin-top: 8px;
+        margin-top: 6px;
       }
 
+      /* Dark faux-outline + soft drop shadow keeps captions legible over bright/busy
+         footage. (WCAG audit samples flat background only and can't see this — real
+         legibility is verified visually in the rendered output / M6 QC.) */
       .word {
         display: inline-block;
         color: #f2ede4;
         text-shadow:
-          0 2px 12px rgba(0, 0, 0, 0.6),
-          0 4px 24px rgba(0, 0, 0, 0.35);
+          -2px -2px 0 rgba(10, 20, 12, 0.92),
+          2px -2px 0 rgba(10, 20, 12, 0.92),
+          -2px 2px 0 rgba(10, 20, 12, 0.92),
+          2px 2px 0 rgba(10, 20, 12, 0.92),
+          0 4px 18px rgba(0, 0, 0, 0.6);
         will-change: transform, opacity;
         backface-visibility: hidden;
       }
 
+      /* Body words: DM Sans 600, Warm Cream. */
       .word--normal {
         font-family: "DM Sans", sans-serif;
-        font-size: 86px;
+        font-size: 78px;
         font-weight: 600;
         font-style: normal;
       }
 
+      /* Inline accent: Cormorant Garamond 700 Italic, Accent Green. (Used only when
+         UNIFORM_CREAM=false — see design.md decision note.) */
       .word--italic {
         font-family: "Cormorant Garamond", serif;
-        font-size: 92px;
-        font-weight: 600;
+        font-size: 86px;
+        font-weight: 700;
         font-style: italic;
         color: #3d9e6e;
       }
 
+      /* Hero emphasis word: large Cormorant Garamond 700 Italic, Accent Green.
+         (Used only when UNIFORM_CREAM=false.) */
       .word--emphasis {
         font-family: "Cormorant Garamond", serif;
-        font-size: 180px;
+        font-size: 172px;
         font-weight: 700;
         font-style: italic;
         line-height: 0.9;
@@ -139,32 +145,81 @@
       data-composition-id="caption-editorial-emphasis"
       data-timeline-locked
       data-start="0"
-      data-duration="8"
+      data-duration="15.09"
       data-fps="30"
-      data-width="1920"
-      data-height="1080"
+      data-width="1080"
+      data-height="1920"
     >
-      <video
-        id="bg-video"
-        muted
-        playsinline
-        preload="auto"
-        data-start="0"
-        data-duration="8"
-        data-track-index="0"
-        data-has-audio="false"
-      ></video>
-
       <div class="caption-layer" aria-hidden="true">
         <div id="caption-stage" class="safe-zone"></div>
       </div>
     </div>
 
     <script>
-      var DURATION = 8;
-      var SAFE_WIDTH = 1800;
-      var ENTRY_DUR = 0.1;
-      var SLIDE_DUR = 0.2;
+      // >>> ACME-CAPTION-DATA — per-job block. reel.py replaces EVERYTHING between
+      // these two markers with values generated from the job's caption_data.json.
+      // The defaults below render ACME-007 standalone (npm run dev / check). Do not
+      // move the markers. (Also keep the #editorial-emphasis data-duration attribute
+      // in sync — reel.py rewrites it from caption_data.json.duration.)
+      var DURATION = 15.09;
+      var UNIFORM_CREAM = true;
+      var W = [
+        { text: "Okay,", start: 0.27, end: 0.54 },
+        { text: "quick", start: 0.54, end: 0.61 },
+        { text: "review,", start: 1.0, end: 1.63 },
+        { text: "this", start: 1.72, end: 2.0 },
+        { text: "Acme", start: 2.12, end: 2.58 },
+        { text: "Labs", start: 2.58, end: 2.96 },
+        { text: "Metabolic", start: 2.96, end: 3.72 },
+        { text: "Support", start: 3.84, end: 4.48 },
+        { text: "Stack.", start: 4.48, end: 5.04 },
+        { text: "I", start: 5.08, end: 5.1 },
+        { text: "like", start: 5.31, end: 5.41 },
+        { text: "the", start: 5.44, end: 5.62 },
+        { text: "simple", start: 5.64, end: 6.1 },
+        { text: "stack", start: 6.1, end: 6.48 },
+        { text: "format", start: 6.48, end: 6.94 },
+        { text: "and", start: 6.94, end: 7.03 },
+        { text: "clear", start: 7.28, end: 7.55 },
+        { text: "labeling.", start: 7.55, end: 8.42 },
+        { text: "It's", start: 8.46, end: 8.72 },
+        { text: "research", start: 8.72, end: 9.03 },
+        { text: "use", start: 9.42, end: 9.51 },
+        { text: "only,", start: 9.59, end: 10.03 },
+        { text: "so", start: 10.03, end: 10.07 },
+        { text: "I'm", start: 10.23, end: 10.39 },
+        { text: "careful,", start: 10.66, end: 11.09 },
+        { text: "but", start: 11.09, end: 11.32 },
+        { text: "quality", start: 11.32, end: 11.85 },
+        { text: "feels", start: 11.85, end: 12.14 },
+        { text: "solid.", start: 12.26, end: 12.92 },
+        { text: "If", start: 12.96, end: 13.01 },
+        { text: "you're", start: 13.15, end: 13.28 },
+        { text: "researching,", start: 13.32, end: 13.92 },
+        { text: "this", start: 13.92, end: 14.11 },
+        { text: "one's", start: 14.11, end: 14.34 },
+        { text: "worth", start: 14.34, end: 14.57 },
+        { text: "a", start: 14.57, end: 14.73 },
+        { text: "look.", start: 14.73, end: 14.91 },
+      ];
+      var BLOCKS = [
+        { line1: [[0, "n"], [1, "n"]], line2: [[2, "n"]] },
+        { line1: [[3, "n"]], line2: [[4, "n"], [5, "n"]] },
+        { line1: [[6, "n"], [7, "n"]], line2: [[8, "e"]] },
+        { line1: [[9, "n"], [10, "n"], [11, "n"]], line2: [[12, "n"]] },
+        { line1: [[13, "n"], [14, "n"]], line2: null },
+        { line1: [[15, "n"], [16, "n"]], line2: [[17, "n"]] },
+        { line1: [[18, "n"], [19, "n"], [20, "n"]], line2: [[21, "n"]] },
+        { line1: [[22, "n"], [23, "n"]], line2: [[24, "n"], [25, "n"]] },
+        { line1: [[26, "n"], [27, "n"]], line2: [[28, "e"]] },
+        { line1: [[29, "n"], [30, "n"]], line2: [[31, "n"]] },
+        { line1: [[32, "n"], [33, "n"], [34, "n"], [35, "n"]], line2: [[36, "e"]] },
+      ];
+      // <<< ACME-CAPTION-DATA <<<
+
+      var SAFE_WIDTH = 940;
+      var ENTRY_DUR = 0.12; // normal word pop
+      var EMPH_DUR = 0.24; // hero emphasis word settle
 
       var _fitCanvas = document.createElement("canvas");
       var _fitCtx = _fitCanvas.getContext("2d");
@@ -179,132 +234,25 @@
         return minSize;
       }
 
-      // Generic transcript words
-      var W = [
-        { text: "Every", start: 0.0, end: 0.3 },
-        { text: "great", start: 0.3, end: 0.55 },
-        { text: "video", start: 0.55, end: 0.85 },
-        { text: "starts", start: 0.85, end: 1.1 },
-        { text: "with", start: 1.1, end: 1.25 },
-        { text: "a", start: 1.25, end: 1.35 },
-        { text: "single", start: 1.35, end: 1.65 },
-        { text: "frame.", start: 1.65, end: 2.0 },
-        { text: "HyperFrames", start: 2.1, end: 2.65 },
-        { text: "lets", start: 2.65, end: 2.85 },
-        { text: "you", start: 2.85, end: 2.95 },
-        { text: "write", start: 2.95, end: 3.15 },
-        { text: "HTML", start: 3.15, end: 3.55 },
-        { text: "and", start: 3.55, end: 3.65 },
-        { text: "render", start: 3.65, end: 3.95 },
-        { text: "professional", start: 3.95, end: 4.45 },
-        { text: "video.", start: 4.45, end: 4.8 },
-        { text: "No", start: 4.9, end: 5.05 },
-        { text: "timeline.", start: 5.05, end: 5.45 },
-        { text: "No", start: 5.5, end: 5.65 },
-        { text: "drag", start: 5.65, end: 5.85 },
-        { text: "and", start: 5.85, end: 5.95 },
-        { text: "drop.", start: 5.95, end: 6.25 },
-        { text: "Just", start: 6.35, end: 6.55 },
-        { text: "code", start: 6.55, end: 6.8 },
-        { text: "that", start: 6.8, end: 6.95 },
-        { text: "becomes", start: 6.95, end: 7.3 },
-        { text: "cinema.", start: 7.3, end: 7.7 },
-      ];
-
-      // Block layout: [wordIndex, type] — n=normal, i=italic, e=emphasis(large)
-      // Emphasis words: HyperFrames(8), HTML(12), professional(15), code(24), cinema.(27)
-      var BLOCKS = [
-        {
-          line1: [
-            [0, "n"],
-            [1, "n"],
-            [2, "n"],
-          ],
-          line2: [
-            [3, "n"],
-            [4, "n"],
-          ],
-        },
-        {
-          line1: [
-            [5, "n"],
-            [6, "n"],
-          ],
-          line2: [[7, "e"]],
-        },
-        { line1: [[8, "e"]], line2: null },
-        {
-          line1: [
-            [9, "n"],
-            [10, "n"],
-            [11, "n"],
-          ],
-          line2: [[12, "e"]],
-        },
-        {
-          line1: [
-            [13, "n"],
-            [14, "n"],
-          ],
-          line2: [[15, "e"]],
-        },
-        {
-          line1: [
-            [16, "n"],
-            [17, "n"],
-          ],
-          line2: null,
-        },
-        {
-          line1: [[18, "n"]],
-          line2: [
-            [19, "n"],
-            [20, "n"],
-          ],
-        },
-        {
-          line1: [
-            [21, "n"],
-            [22, "n"],
-          ],
-          line2: null,
-        },
-        {
-          line1: [
-            [23, "i"],
-            [24, "e"],
-          ],
-          line2: null,
-        },
-        {
-          line1: [
-            [25, "n"],
-            [26, "n"],
-          ],
-          line2: [[27, "e"]],
-        },
-      ];
-
-      var CLASS_MAP = { n: "word word--normal", i: "word word--italic", e: "word word--emphasis" };
+      // UNIFORM_CREAM=true → every word plain DM Sans cream (no green, no hero sizing).
+      // false → brand "editorial emphasis" (Cormorant italic green on i/e words).
+      var CLASS_MAP = UNIFORM_CREAM
+        ? { n: "word word--normal", i: "word word--normal", e: "word word--normal" }
+        : { n: "word word--normal", i: "word word--italic", e: "word word--emphasis" };
 
       function computeLineSize(linePairs) {
-        var hasEmphasis = linePairs.some(function (p) {
+        var hasEmphasis = !UNIFORM_CREAM && linePairs.some(function (p) {
           return p[1] === "e";
         });
-        if (hasEmphasis) {
-          var lineText = linePairs
-            .map(function (p) {
-              return W[p[0]].text;
-            })
-            .join(" ");
-          return fitFontSize(lineText, 180, "700", "Cormorant Garamond", SAFE_WIDTH);
-        }
         var lineText = linePairs
           .map(function (p) {
             return W[p[0]].text;
           })
           .join(" ");
-        return fitFontSize(lineText, 86, "600", "DM Sans", SAFE_WIDTH);
+        if (hasEmphasis) {
+          return fitFontSize(lineText, 172, "700", "Cormorant Garamond", SAFE_WIDTH);
+        }
+        return fitFontSize(lineText, 78, "600", "DM Sans", SAFE_WIDTH);
       }
 
       function buildBlocks() {
@@ -323,11 +271,7 @@
             span.className = CLASS_MAP[pair[1]];
             span.id = "b" + bi + "L1w" + wi;
             span.textContent = W[pair[0]].text;
-            if (pair[1] === "e") {
-              span.style.fontSize = l1Size + "px";
-            } else {
-              span.style.fontSize = l1Size + "px";
-            }
+            span.style.fontSize = l1Size + "px";
             l1.appendChild(span);
           });
           el.appendChild(l1);
@@ -342,11 +286,7 @@
               span.className = CLASS_MAP[pair[1]];
               span.id = "b" + bi + "L2w" + wi;
               span.textContent = W[pair[0]].text;
-              if (pair[1] === "e") {
-                span.style.fontSize = l2Size + "px";
-              } else {
-                span.style.fontSize = l2Size + "px";
-              }
+              span.style.fontSize = l2Size + "px";
               l2.appendChild(span);
             });
             el.appendChild(l2);
@@ -358,7 +298,7 @@
 
       buildBlocks();
 
-      // Scale blocks that exceed safe width
+      // Scale any block whose rendered width exceeds the safe zone.
       (function fitBlocks() {
         BLOCKS.forEach(function (block, bi) {
           var el = document.getElementById("b" + bi);
@@ -395,9 +335,9 @@
         var nextStart = bi < BLOCKS.length - 1 ? blockStart(bi + 1) : DURATION;
 
         allEls.forEach(function (other, oi) {
-          if (oi !== bi) tl.set(other, { opacity: 0 }, start);
+          if (oi !== bi) tl.set(other, { opacity: 0, visibility: "hidden" }, start);
         });
-        tl.set(el, { opacity: 1 }, start);
+        tl.set(el, { opacity: 1, visibility: "visible" }, start);
 
         block.line1.forEach(function (pair, wi) {
           var wordEl = document.getElementById("b" + bi + "L1w" + wi);
@@ -411,14 +351,16 @@
         });
 
         if (block.line2) {
-          var hasEmphasis = block.line2.some(function (p) {
+          var hasEmphasis = !UNIFORM_CREAM && block.line2.some(function (p) {
             return p[1] === "e";
           });
           var l2El = document.getElementById("b" + bi + "L2");
           if (hasEmphasis) {
+            // Hero emphasis word: fast rise + scale settle (no horizontal travel,
+            // so it never clips at the frame edge and lands even on the final beat).
             var l2Start = W[block.line2[0][0]].start;
-            tl.set(l2El, { opacity: 0, x: -1920 }, start);
-            tl.to(l2El, { opacity: 1, x: 0, duration: SLIDE_DUR, ease: "power2.out" }, l2Start);
+            tl.set(l2El, { opacity: 0, y: 22, scale: 1.12, transformOrigin: "0% 100%" }, start);
+            tl.to(l2El, { opacity: 1, y: 0, scale: 1, duration: EMPH_DUR, ease: "back.out(1.5)" }, l2Start);
           } else {
             tl.set(l2El, { opacity: 1 }, start);
             block.line2.forEach(function (pair, wi) {
@@ -434,7 +376,8 @@
           }
         }
 
-        tl.set(el, { opacity: 0 }, nextStart);
+        // Hard kill at the next beat (or composition end for the last beat).
+        tl.set(el, { opacity: 0, visibility: "hidden" }, nextStart);
       });
 
       tl.to({}, { duration: DURATION }, 0);

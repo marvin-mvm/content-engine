@@ -1,0 +1,31 @@
+{
+  "job_id": "ACME-008",
+  "type": "image",
+  "brand": "labs",
+  "pillar": "stack",
+  "persona": "P1",
+  "topic": "Semaglutide — GLP-1 research-grade feature",
+  "platforms": ["instagram"],
+  "compound": "Semaglutide",
+  "class": "GLP-1 ANALOG",
+  "product_feature": true,
+  "image": {
+    "template": "templates/src/static-compound-dark.html",
+    "bg_policy": "plain",
+    "set": {
+      "BRAND_NAME": "ACME LABS",
+      "CLASS_CHIP": "GLP-1 ANALOG",
+      "EYEBROW": "FEATURED COMPOUND",
+      "COMPOUND": "Semaglutide",
+      "DESCRIPTOR": "Incretin mimetic for metabolic research",
+      "SPEC_1": "GLP-1 receptor agonism — appetite & glycemic signaling models",
+      "SPEC_2": "5mg lyophilized · single sterile vial",
+      "SPEC_3": "Shipped cold-chain, worldwide",
+      "SPEC_LINE": "GLP-1 analog · 5mg lyophilized · ≥99% HPLC purity",
+      "PRICE": "$149",
+      "COA_CHIP": "COA AVAILABLE",
+      "RUO_LINE": "RUO · NOT FOR HUMAN CONSUMPTION",
+      "HANDLE": "@acmelabs"
+    }
+  }
+}

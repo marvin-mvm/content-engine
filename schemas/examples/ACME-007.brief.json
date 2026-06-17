@@ -1,0 +1,23 @@
+{
+  "job_id": "ACME-007",
+  "type": "reel",
+  "brand": "labs",
+  "pillar": "proof",
+  "persona": "P3",
+  "topic": "Acme Labs Metabolic Support Stack — honest research review",
+  "video": "Properly made review with Nova and the Product.mp4",
+  "platforms": ["instagram", "tiktok"],
+  "caption_data": "caption_data.json",
+  "cover": {
+    "template": "templates/src/story-reel-dark.html",
+    "BRAND_NAME": "ACME LABS",
+    "EYEBROW": "RESEARCH USE ONLY",
+    "HOOK_LINE_1": "The Metabolic",
+    "HOOK_LINE_2_ITALIC": "Support Stack",
+    "HOOK_LINE_3": "reviewed",
+    "SUBTITLE_TEXT": "Simple stack. Clear labeling.",
+    "CTA_LABEL": "READ THE COA",
+    "HANDLE": "@acmelabs"
+  },
+  "script": "Okay, quick review, this Acme Labs Metabolic Support Stack. I like the simple stack format and clear labeling. It's research use only, so I'm careful, but quality feels solid. If you're researching, this one's worth a look."
+}

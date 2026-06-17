@@ -112,8 +112,17 @@ def list_tokens(html: str) -> list[str]:
 
 
 def detect_size(html: str) -> tuple[int, int]:
-    """Detect width/height from the root element style attribute."""
-    m = re.search(r"width:\s*(\d+)px[^;\"]*?height:\s*(\d+)px", html)
+    """Detect width/height from the root element style attribute.
+
+    Matches the first `width: Npx; height: Mpx` pair — every template declares
+    its canonical size on the `body` rule (and the root div) with the two
+    properties adjacent, separated by `; `. The earlier `[^;"]` separator class
+    could NOT cross that semicolon, so any non-9:16 template silently fell back
+    to the 1080×1920 default and rendered a banned white band below the card
+    (carousel 1350, callout 1080, compound 1350). The `\\s*;?\\s*` separator
+    fixes that while leaving the 9:16 story/poll templates at 1920 unchanged.
+    """
+    m = re.search(r"width:\s*(\d+)px\s*;?\s*height:\s*(\d+)px", html)
     if m:
         return int(m.group(1)), int(m.group(2))
     return 1080, 1920

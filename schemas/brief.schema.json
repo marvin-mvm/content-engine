@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acme.local/schemas/brief.schema.json",
+  "title": "Acme content brief (M1 contract)",
+  "description": "One brief per job in output/jobs/ACME-NNN/brief.json. type=reel drives the reel pipeline (M4->M5) via reel.py; type=image drives the image pipeline (M5) via post.py. A reel brief uses 'video'+'caption_data'+'cover'; an image brief uses 'image'.",
+  "type": "object",
+  "required": ["job_id", "type", "brand", "pillar", "persona", "topic"],
+  "additionalProperties": false,
+  "properties": {
+    "job_id": { "type": "string", "pattern": "^ACME-[0-9]{3,}$", "description": "Job folder id, e.g. ACME-007" },
+    "type": { "enum": ["reel", "image"], "description": "reel = video caption chain (reel.py, A2); image = template render chain (post.py, A3)" },
+    "brand": { "enum": ["labs", "health"], "description": "labs = RUO/organic-only; health = may run paid" },
+    "pillar": { "enum": ["science", "stack", "trending", "proof", "founder"], "description": "Content pillar (Part 1A.2)" },
+    "persona": { "enum": ["P1", "P2", "P3"], "description": "P1 optimizer | P2 affluent-woman | P3 newcomer" },
+    "topic": { "type": "string", "minLength": 3 },
+    "platforms": { "type": "array", "items": { "enum": ["instagram", "tiktok", "x", "threads", "facebook"] }, "default": ["instagram", "tiktok"] },
+    "video": { "type": "string", "description": "REEL only: path to the source mp4 (relative to acme/). Copied into the build as input.mp4." },
+    "caption_data": { "type": "string", "default": "caption_data.json", "description": "REEL only: filename (in the job folder) of the caption beats data; see caption_data.schema fields below." },
+    "cover": {
+      "type": "object",
+      "description": "M5 branded cover/poster tokens passed to produce.py --set. Green emphasis is allowed here (templates keep the brand signature).",
+      "required": ["template", "BRAND_NAME", "EYEBROW", "HOOK_LINE_1", "HOOK_LINE_2_ITALIC", "HOOK_LINE_3", "SUBTITLE_TEXT", "CTA_LABEL", "HANDLE"],
+      "additionalProperties": true,
+      "properties": {
+        "template": { "type": "string", "description": "e.g. templates/src/story-reel-dark.html" },
+        "BRAND_NAME": { "type": "string" },
+        "EYEBROW": { "type": "string", "description": "Labs RUO posts: carry the RUO line here, e.g. RESEARCH USE ONLY" },
+        "HOOK_LINE_1": { "type": "string" },
+        "HOOK_LINE_2_ITALIC": { "type": "string" },
+        "HOOK_LINE_3": { "type": "string" },
+        "SUBTITLE_TEXT": { "type": "string" },
+        "CTA_LABEL": { "type": "string" },
+        "HANDLE": { "type": "string" }
+      }
+    },
+    "image": {
+      "type": "object",
+      "description": "IMAGE only: drives post.py (M5). bg_policy is plain|reuse ONLY — post.py never generates (0 credits). Green Cormorant-italic emphasis is allowed/expected on these designed templates (the all-cream rule is captions-only).",
+      "required": ["template"],
+      "additionalProperties": false,
+      "properties": {
+        "template": { "type": "string", "description": "e.g. templates/src/static-compound-dark.html" },
+        "bg_policy": { "enum": ["plain", "reuse"], "default": "plain", "description": "plain = template-only baked bg; reuse = --bg-file an EXISTING local asset. Never 'generate' here." },
+        "source_asset": { "type": "string", "description": "Required iff bg_policy=reuse: path (relative to acme/) to an existing local image. Match the template aspect (9:16 story · 4:5 carousel/compound · 1:1 callout); pick open negative space, no competing burned-in text." },
+        "carousel": { "type": "string", "description": "Optional: filename of a JSON array of per-slide token dicts -> one PNG per slide. Plain bg only." },
+        "set": { "type": "object", "description": "Template tokens (TOKEN: value) passed to produce.py --set. Get the list with produce.py <template> --tokens." }
+      }
+    },
+    "script": { "type": "string", "description": "Optional: exact voiceover/spoken script (used to reconcile Whisper mishears)." },
+    "compound": { "type": "string" },
+    "class": { "type": "string" },
+    "product_feature": { "type": "boolean", "default": false }
+  }
+}

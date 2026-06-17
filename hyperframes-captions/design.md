@@ -32,6 +32,15 @@ values. Never substitute fonts or invent colors.**
 
 ## Caption style (Zone 2 spec)
 
+> **DECISION (2026-06-17, Operator) — talking-head reel captions render ALL-CREAM uniform.**
+> For burned word-by-word captions over talking-head footage, every word is DM Sans 600
+> `#F2EDE4` at one size — **no green, no oversized hero words** (cleaner, and clears WCAG over
+> bright footage). The green Cormorant-italic emphasis bullet below is **suspended for these
+> captions**, pending a formal SOUL.md amendment at cutover (SOUL.md is frozen during the
+> migration, so this is logged here, not changed at the source). The green "mixed-type"
+> signature **still applies** to designed templates/covers (story-reel cards, carousels,
+> headlines). Implementation toggle: `UNIFORM_CREAM` in `caption-editorial-emphasis.html`.
+
 - Position: lower-middle, ~600–700px from the bottom on 1080×1920 portrait reels.
 - Body words: DM Sans 600, `#F2EDE4`, with a soft dark text-shadow for legibility.
 - Emphasis words: Cormorant Garamond 700 Italic, `#3D9E6E`, larger size.

@@ -1,0 +1,26 @@
+{
+  "job_id": "ACME-010",
+  "type": "image",
+  "brand": "labs",
+  "pillar": "founder",
+  "persona": "P1",
+  "topic": "The peptide behind telomere research — Epithalon story",
+  "platforms": ["instagram"],
+  "compound": "Epithalon",
+  "class": "TETRAPEPTIDE",
+  "image": {
+    "template": "templates/src/story-reel-light.html",
+    "bg_policy": "reuse",
+    "source_asset": "asset_cache/url_fbaa58f2584d2c11.png",
+    "set": {
+      "BRAND_NAME": "ACME LABS",
+      "EYEBROW": "RESEARCH USE ONLY",
+      "HOOK_LINE_1": "The peptide behind",
+      "HOOK_LINE_2_ITALIC": "telomere",
+      "HOOK_LINE_3": "research",
+      "SUBTITLE_TEXT": "Epithalon · pineal tetrapeptide",
+      "CTA_LABEL": "READ THE COA",
+      "HANDLE": "@acmelabs"
+    }
+  }
+}

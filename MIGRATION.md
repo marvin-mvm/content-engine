@@ -188,7 +188,7 @@ Claude judgment steps (the part OpenClaw/flash could never do): word-grouping in
 | **A0 — Safety** | `.gitignore` (output/, asset_cache/, *.mp4, memory/, junk, .env, credentials) · archive decoy templates · delete junk · **git commit the engine code** | 🟢 Easy (~30 min) | 0 |
 | **A1 — Prove the reel chain on an existing video** | Pick a finished asset already owned (local mp4 or completed Higgsfield job — free retrieval) → M4 captions → M5 thumbnail → visual review → iterate caption look/zones until approved | 🟡 Medium (iteration is the work) | **0** |
 | **A2 — Wrap it** | Encode proven steps as the `brief.json` contract + job-folder layout + M6 checklist; re-run start-to-finish from a brief to confirm repeatability | 🟢 Easy | 0 |
-| **A3 — Image pipeline same treatment** | Plain-bg + reuse-bg variants through M5+M6; validates all 5 template families (story, poll, carousel, callout, compound) | 🟢 Easy | 0 |
+| **A3 — Image pipeline same treatment ✅** | Plain-bg + reuse-bg variants through M5+M6; validates all 5 template families (story, poll, carousel, callout, compound). **DONE** — `post.py` runner + `render.py detect_size` fix + runbook §9. | 🟢 Easy | 0 |
 | **A4 — Preflight gate** | M3 checklist as a hard scripted/skill gate; fix `poll_video.py` col-F bug (#1) | 🟢 Easy | 0 |
 | **A5 — First live fire** | ONE image generation → full chain → QC. Then ONE video generation → full chain → QC | 🟢 Easy | **1 image + 1 video — the entire validation budget** |
 | **A6 — Skill-ify** | `.claude/skills/acme-reel` + `.claude/skills/acme-post` encoding the recipes; new Claude-Code-local `CLAUDE.local` notes if needed. **Do NOT edit the repo `CLAUDE.md` stub yet** (OpenClaw-era pointer; replaced only at cutover, Part 4) | 🟢 Easy | 0 |
@@ -196,8 +196,10 @@ Claude judgment steps (the part OpenClaw/flash could never do): word-grouping in
 **Credits are touched exactly once, in A5, after everything downstream is proven.**
 
 Open decisions before A1 starts:
-- Which test video: `Properly made review with Nova and the Product.mp4` · `acme_007_v5.mp4` · most recent completed Higgsfield job (free to fetch)?
-- Caption style sign-off criteria (Operator judges visually in A1).
+- Which test video: **RESOLVED 2026-06-16 (Operator): `Properly made review with Nova and the Product.mp4`.** Chosen because it carries real spoken audio, which exercises the full M4 transcribe→caption path *and* the M5 overlay — the truest end-to-end validation. (Alternatives `acme_007_v5.mp4` and the latest Higgsfield job were not used.) Status: **A0 committed (branch `acme-migration`, 9cba238); A1 not yet started.**
+- Caption style: **RESOLVED 2026-06-17 (Operator): ALL-CREAM uniform captions** (no green emphasis on talking-head reels; `UNIFORM_CREAM=true`). Deviates from SOUL.md's documented green "signature emphasis" → formal brand-book amendment deferred to cutover (Part 4), Devon's nod advised. Green retained on designed templates/covers. Recipe + every A1 gotcha captured in `PIPELINE_RUNBOOK.md`.
+- **A1 status:** M4→M5 chain proven on ACME-007 (`output/jobs/ACME-007/`), 0 credits. Composition + runbook + this decision pending the A1 git commit.
+- **A3 status (DONE 2026-06-17, 0 credits):** all 5 template families validated brand-correct through M5+M6 (`output/a3_qc/`, 15 renders, plain + reuse). Found + fixed a real bug — `render.py detect_size` was returning the 1080×1920 default for every non-9:16 template (carousel/callout/compound rendered with a banned white band); backward-compatible fix, story/poll templates unchanged. Wrapped into `post.py` (image analogue of `reel.py`: `brief.json type=image`, `bg_policy plain|reuse`, refuses `generate` so it can never spend a credit). Two brand calls resolved (Operator): (1) **story-poll brought into SOUL compliance** — added the brand bar (leaf badge + `ACME LABS` + `@acmelabs · acmelabs.co`), so all 5 families now carry the mandatory brand mark; (2) **reuse-bg = generic brand b-roll only** — product/spokesperson heroes are dynamic per-SKU content, never used as a `--bg-file` background. Image recipe + gotchas in PIPELINE_RUNBOOK §9.
 
 ---
 

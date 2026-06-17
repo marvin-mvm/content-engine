@@ -1,0 +1,15 @@
+{
+  "job_id": "ACME-009",
+  "type": "image",
+  "brand": "labs",
+  "pillar": "science",
+  "persona": "P3",
+  "topic": "How semaglutide signals satiety — GLP-1 explainer carousel",
+  "platforms": ["instagram"],
+  "image": {
+    "template": "templates/src/carousel-dark.html",
+    "bg_policy": "plain",
+    "carousel": "slides.json",
+    "set": { "BRAND_NAME": "ACME LABS", "HANDLE": "@acmelabs" }
+  }
+}
