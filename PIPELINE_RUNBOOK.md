@@ -227,8 +227,8 @@ fonts, colors, scrim, outline, motion timings — `reel.py` injects per-job data
 build copy and never edits the tracked template.
 
 > ✅ **A2 done:** `reel.py` drives `words`/`blocks`/`duration`/`uniform_cream` from
-> `caption_data.json` and the cover from `brief.cover` — no hand-editing. **A6** will wrap
-> `reel.py` as the `acme-reel` skill.
+> `caption_data.json` and the cover from `brief.cover` — no hand-editing. ✅ **A6 done:**
+> wrapped as the `acme-reel` Claude Code skill (`.claude/skills/acme-reel/`).
 
 ---
 
@@ -349,7 +349,8 @@ line + class/COA chips on Labs product posts** · correct aspect · legible · n
 
 **The contract:** ANY failed check → **exit 1**, reasons printed to stderr, **stdout stays
 empty** (no go-token). All checks pass → **exit 0** + `PREFLIGHT-OK` printed to stdout. So the
-submit step can hard-gate on the token; nothing can mistake a block for a pass.
+submit step can hard-gate on the token; nothing can mistake a block for a pass. ✅ **A6 done:**
+wrapped as the `acme-preflight` Claude Code skill (`.claude/skills/acme-preflight/`).
 
 ### 10.1 The checks (all must pass — `python3 tests/test_preflight.py` proves block + pass)
 
@@ -381,3 +382,206 @@ python3 preflight.py --route video --model seedance_2_0 --aspect 9:16 --no-wait 
 
 `--print-block image|video` emits the exact block so you never hand-paste it. The gate is
 0-credit; **A5 is the only place a real `higgsfield generate` runs, and only after this passes.**
+
+---
+
+## 11. Publishing to Blotato (F1) — `publish.py`, one command (built 2026-06-17)
+
+> **Status:** the publish flow is **proven end-to-end** (ACME-011 BPC-157 carousel → **X live**
+> + **TikTok scheduled**, Operator signed off) **and now wrapped into the one-command module
+> `publish.py`** with a hard pre-publish compliance gate (§11.5). §11.1–11.3 below document the
+> underlying `blotato.py` flow + the platform limits; §11.5 is the runner that drives it.
+
+### 11.1 The flow that works
+
+```
+job folder PNGs  →  blotato.py upload <file>  →  public URL  →  blotato.py publish (per platform)
+   (local)            (presigned PUT)            (mediaUrls)      X / TikTok, immediate or --schedule
+```
+
+1. **Upload each media file** (the bridge — `create_post` needs PUBLIC urls, our renders are local):
+   `python3 blotato.py upload output/jobs/ACME-NNN/ACME-NNN-slide-01.png` → prints a public URL.
+2. **Publish per platform** with the right treatment + `--dry-run` FIRST to verify the payload:
+   ```bash
+   # X (Twitter) — single opinion tweet, cover image, 0 hashtags:
+   python3 blotato.py publish "<≤280-char opinion>" --account-id 18688 --platform twitter --media-url <coverURL>
+   # TikTok — photo carousel, scheduled, public, AI-flagged (defaults applied automatically):
+   python3 blotato.py publish "<caption + 3–5 hashtags>" --account-id 43061 --platform tiktok \
+     --media-url <s1> --media-url <s2> ... --media-url <s5> --schedule 2026-06-17T20:53:39Z
+   ```
+   Connected accounts: **TikTok 43061 · X/Twitter 18688 · YouTube 37252** (`@acmelabs`). Instagram
+   NOT connected yet (Operator's manual Blotato step). Get current IDs: `blotato.py accounts`.
+
+### 11.2 `blotato.py` changes made in F1 (backward-compatible; OpenClaw still works)
+
+- **`upload FILE`** — new: presigned-URL PUT → prints `publicUrl`. The missing local→public bridge.
+- **`--dry-run`** on publish — prints the exact payload, posts nothing. **Use it every time** (it
+  caught a real empty-`mediaUrl` bug pre-flight, see P5).
+- **Bug fixes:** `scheduleTime` → **`scheduledTime`** (scheduling silently no-op'd before);
+  `post-status` arg `id` → **`postSubmissionId`**.
+- **TikTok required fields** auto-applied (privacyLevel=PUBLIC_TO_EVERYONE, isAiGenerated=true,
+  isYourBrand=true, the rest false) + `--privacy-level` override.
+- **`--also TEXT`** (repeatable) → `additionalPosts` (thread; **chains correctly on X**). Currently text-only per follow-up — see P1 to add a per-post image.
+
+### 11.3 Findings & gotchas (READ BEFORE NEXT PUBLISH)
+
+| # | Finding | Detail / fix |
+|---|---------|--------------|
+| P1 | **X thread follow-ups had no image** | The thread **chains correctly** on X (earlier "doesn't chain" read was WRONG — Operator confirmed the thread posted). The real gap: `blotato.py --also` passes **text only**, so follow-up tweets carried no media. Blotato's `additionalPosts` supports `{text, mediaUrls}` per post → **attach a slide image to each follow-up**. Enhancement: extend `--also` to carry per-post media (e.g. paired `--also-media`). |
+| P2 | **YouTube = video uploads only** | Blotato's YouTube needs `title`+`privacyStatus` (video). **No community/image posts** — a still-image carousel cannot go to YouTube. YouTube is for the video pipeline. |
+| P3 | **No first-comment field** | Blotato `create_post` has no first-comment param. SOUL wants 20–30 hashtags in the first comment on IG/TikTok → for now **hashtags go in the caption body** (TikTok 3–5; X 0). Revisit if Blotato adds it. |
+| P4 | **Can't delete a published post** | Blotato has `delete_schedule` (scheduled only), no delete-published API. A bad live post must be removed **manually on the platform**. → dry-run + visual check before going live. |
+| P5 | **Shell arrays are 1-indexed here** | `${U[0]}` was empty → an empty `mediaUrl` + a dropped slide. `--dry-run` caught it. Use explicit per-file vars, not `${arr[0]}`. |
+| P6 | **`published`≠fully posted** | A `200/published` from `create_post` confirms only the MAIN post. **Visually verify** the live post (thread/carousel) — the API won't tell you a sub-post failed. |
+
+### 11.4 Still to build
+
+Instagram/Threads/Facebook **Blotato connection** (Operator's manual step — `publish.py` skips them
+with a warning until connected); per-post **thread images** on X (`blotato.py --also` is text-only,
+finding P1); **post-status tracking**; **Supabase** `published_posts` (F-series — `publish.py`
+currently records to `<job>/published_posts.json`). ✅ **Done in F1:** `publish.py` runner +
+compliance gate (§11.5), `copy.py` per-platform captions (bug #2 — `x/threads/facebook/linkedin`).
+
+### 11.5 `publish.py` — the one-command publisher (F1)
+
+> **What this is:** job folder → upload each media file via `blotato.py` → publish per platform
+> with the right treatment + scheduling. **DRY RUN BY DEFAULT** (prints every `blotato.py` call,
+> makes **zero** network calls); `--go` actually posts. A hard **compliance gate** runs in *both*
+> modes — `--go` cannot bypass it. 0 Higgsfield credits.
+
+```bash
+# DRY RUN (default) — prints the exact upload + publish commands, posts nothing:
+python3 publish.py output/jobs/ACME-NNN
+python3 publish.py output/jobs/ACME-NNN --platforms x,tiktok --when 2026-06-18T16:00:00Z
+# UPLOAD-ONLY — real upload of the media to Blotato, posts NOTHING (pre-stage / safe test):
+python3 publish.py output/jobs/ACME-NNN --upload-only
+# GO LIVE (irreversible — needs Operator's explicit OK; verify each post visually after):
+python3 publish.py output/jobs/ACME-NNN --platforms x,tiktok --go
+```
+
+> **Runner validated 2026-06-18 (0 public posts):** compliance gate (block+pass), command
+> construction + scheduling + platform skips (dry-run), result recording vs the real ACME-011
+> Blotato responses (unit), and the **live upload path** end-to-end via `--upload-only` (5 slides
+> → real public URLs, HTTP 200, cached). Only the literal `blotato.py publish` call is unexercised
+> by the runner — proven separately by the manual ACME-011/012 publishes. **Meta (IG/Threads/FB)
+> connection deferred** (accounts under review) — `publish.py` skips them with a warning; X+TikTok
+> are the live channels meanwhile.
+
+**Job folder inputs:** `brief.json` (type/brand/platforms) · **`qc.json`** `{"passed": true}`
+(the M6 sign-off marker — REQUIRED) · **`captions.json`** (one unique caption per platform —
+contract + example: [schemas/examples/ACME-011.captions.json](schemas/examples/ACME-011.captions.json))
+· media (`<job>-final.mp4` for reels; `<job_id>.png` / `<job_id>-slide-*.png` for images).
+
+**`captions.json` shape:** keyed by brief platform-name; each value is a **string** (single post)
+or an **object** `{text, thread[], title}`. X carries its thread in `thread[]` (→ `blotato.py
+--also`); YouTube carries `title`. Authored by `copy.py --platform <p>` (one per platform).
+
+**The compliance gate (hard wall — any fail → exit 1, publish nothing):**
+
+| Check | Rule |
+|---|---|
+| QC-pass flag | `qc.json` present with `passed: true` |
+| RUO | **every Labs-brand caption** carries the RUO line (line may sit anywhere in the post/thread) — decided strict 2026-06-17 (Operator): all Labs posts, not just product-features |
+| Labs = organic | Labs is never paid/boosted (no paid path exists; guards a future flag) |
+| Banned claims | `treats/cures/heals/fixes/prevents/diagnoses/proven to/guaranteed/miracle/…` across caption + thread |
+| Media | each file exists + aspect matches (carousel 4:5 · callout 1:1 · compound 4:5 · reel 9:16) |
+| X shape | each X post (main + each thread post) ≤280 chars **and** 0 hashtags (§1A.4) — decided hard-block 2026-06-17 |
+
+**Routing:** X→twitter `18688` · tiktok `43061` · youtube `37252`. Instagram/Threads/Facebook =
+**skipped with a warning** (not connected). YouTube = **skipped for image jobs** (video only, P2).
+X gets the **cover/first image** (single opinion tweet); TikTok/IG get the **full carousel**.
+
+**Records:** successful `--go` runs append to `<job>/published_posts.json` (Supabase is F-series).
+Uploaded URLs cache to `<job>/uploaded_urls.json` so re-runs don't re-upload (`--reupload` forces).
+
+---
+
+## 12. Video reel recipe (M3 generation → M4–M6) — A5, the credit-spend path
+
+> **What this is:** the AI b-roll video path the preflight gate (§10) protects — the ONE place
+> credits are spent. **Proven A5** (ACME-012, BPC-157 b-roll reel): one real `seedance_2_0`
+> generation → 9:16 fix → HyperFrames captions → branded cover → QC. 1 generation = 1+ credits.
+
+### 12.1 The flow
+1. Brief (`type=reel`) + a b-roll **creative** prompt — **no people, no text** (text is burned in M4).
+2. **Preflight gate (§10)** — `route=video`, VIDEO block verbatim, `--no-wait`, `--reuse-checked`. Submit ONLY on `PREFLIGHT-OK` (the gate command literally guards the spend via its exit code).
+3. **Generate:** `python3 higgsfield.py video "$(preflight.py --print-block video) <creative>" --model seedance_2_0 --no-cinematic --no-wait` → returns a job id.
+4. **Poll:** `higgsfield generate get <FULL-UUID>` (the 8-char display prefix is NOT a valid id — use the full UUID).
+5. **Download** `result_url` → **crop to 9:16** (§12.3).
+6. **Author `caption_data.json` to the REAL duration** (`ffprobe` the clip first), then `reel.py <job>` → captioned + cover.
+7. **M6 QC** (§5).
+
+### 12.2 Gotchas (the A5 findings — READ BEFORE NEXT VIDEO)
+| # | Symptom | Cause | Fix |
+|---|---------|-------|-----|
+| V1 | submit traceback: `'str' object has no attribute 'get'` | `generate create … --json` returns the new job id as a **bare string**, not an object | **FIXED** (`higgsfield.py _handle_job_result` normalizes a string → `{"id": …}`). |
+| V2 | re-ran the submit → **DOUBLE SPEND** | after V1's crash, `generate list` doesn't show brand-new **pending** jobs, so it looked like "no spend" → re-run | **Confirm a submit via `generate get <uuid>` / job status, NEVER via `generate list`.** Every `video` call spends — never re-run to "retry" without checking the job first. |
+| V3 | seedance returned **16:9** (1280×720), not 9:16 | `seedance_2_0` ignores aspect (both the flag and prompt-baked) | Crop locally for **free** (§12.3), or budget a Higgsfield `reframe` (costs). |
+| V4 | generated green leans **teal/cyan** | model interpretation of "green" | Prompt-tune: "warm forest green #3D9E6E, **NOT** teal/cyan." Minor — QC visually. |
+
+### 12.3 9:16 conversion (free, local)
+```bash
+ffmpeg -i raw.mp4 -vf "scale=-2:1920,crop=1080:1920" -c:a copy -y raw_916.mp4   # center cover-crop
+```
+Then point `brief.video` at `raw_916.mp4` and run `reel.py`. (seedance audio is generated ambient —
+keep it, or add `-an` to strip.)
+
+---
+
+## 13. Research recipe (F3) — `research.py`, the brief producer (built 2026-06-18)
+
+The front-end that **replaces manual topic-feeding**: it produces `brief.json` files, which then
+flow into the proven core (`copy.py` → `post.py`/`reel.py`). **0 Higgsfield credits.** Two modes.
+Every paid API call is cached under `output/research/cache/` (24h; apify 7d) so re-runs don't
+re-spend — apify is the priciest call, so Mode B fires it once per URL.
+
+### 13.1 Mode A — topic discovery (sweep → SOUL §8 score → brief)
+```bash
+# Cheap dry-run: score candidates + print the §8 breakdown, write NO briefs:
+python3 research.py topics --candidates "BPC-157,Semaglutide" --select 1 --dry-run
+
+# Full run: score the top engine_state compounds, assemble the winner into a brief:
+python3 research.py topics --select 1
+python3 research.py topics --candidates "NAD+,Epithalon,BPC-157" --select 2 --pillar science
+```
+Scores the **six SOUL §8 factors** (trending-velocity .25 · comment-bait .20 · search-volume .20 ·
+educational .15 · product-tie .10 · recency .10) × the per-topic weight in `engine_state.json`,
+skips `blocked_topics`, prints every factor. A compound topic defaults to the **stack** pillar
+(static-compound, labs RUO); otherwise **science** (story-reel).
+
+### 13.2 Mode B — viral-outlier mining + format cloning
+```bash
+# Auto-mine YouTube by view-velocity vs the set median (cheap, searchapi):
+python3 research.py outliers --query "peptides longevity" --num 15
+
+# …then extract + clone the TOP outlier (fires ONE apify scrape) → trending brief:
+python3 research.py outliers --query "peptides longevity" --extract
+
+# Drop-a-link inbox — paste ANY viral URL (YT/TikTok/IG/FB/article) → trending brief:
+python3 research.py inbox "https://www.tiktok.com/@x/video/123" --persona P3 --brand labs
+python3 research.py inbox "<url>" --topic "BPC-157 tendon repair research"   # force the Acme angle
+```
+Outlier = **view-velocity (views/age) ≥ 2× the result-set median** — surfaces fresh high-velocity
+posts over old high-view ones. Extract → classify the **format archetype** (this-or-that, myth-bust,
+list, study-reaction…) → **reconfigure**: pour an Acme-owned topic into that structure, `copy.py`
+rewrites the hook in the Research-Pharmacist voice + enforces compliance. **Clone the FORMAT, never
+the content** — the source's claims are never carried into the brief (kept in `research.json` for
+reference only). Scored by Devon's Mode B weights (niche/persona/format-adaptability/buyer-intent /40
++ recency/curated bonuses).
+
+### 13.3 Daily run + outputs
+```bash
+python3 research.py run --select 4     # 4 Mode-A pillar briefs + 1 trending from outliers (F4 schedules this)
+```
+Each brief lands in `output/jobs/ACME-NNN/`: **`brief.json`** (post.py-ready, type=image, validated
+against `schemas/brief.schema.json`), **`copy.json`** (caption/hashtags/alt for publishing),
+**`research.json`** (discovery provenance + scoring breakdown). Discovery rows are logged to
+`output/research/<date>/{discovery_queue,daily_brief}.json` (local-JSON-first; a Supabase `db.py`
+replaces `DiscoveryStore` additively at cutover). Then: `python3 post.py output/jobs/ACME-NNN` → PNG
+→ **M6 visual QC** (§9.3). Add `--fresh` to any command to bypass the cache; `--dry-run` to score
+without spending on copy.py or writing briefs.
+
+> ⚠️ **Gotchas:** (1) per-follower normalization isn't possible — searchapi/apify don't expose the
+> author's follower count — so outlier ranking uses view-velocity only. (2) Carousel briefs render a
+> single cover card today; full `slides.json` copy-gen is a follow-up. (3) IG/FB/TikTok/Reddit are
+> **drop-a-link only** for now (only YouTube auto-mines) — paste the URL into `research.py inbox`.

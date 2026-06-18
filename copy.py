@@ -13,7 +13,7 @@ the caption/hashtags/alt_text feed the Blotato publish step (SYSTEM_CONTEXT §18
 Usage:
   copy.py "TOPIC" --brand labs|health [--kind full|overlay|caption]
                   [--product-feature] [--compound "BPC-157" --class "PENTADECAPEPTIDE"]
-                  [--platform instagram|tiktok|twitter|youtube]
+                  [--platform instagram|tiktok|twitter|x|youtube|threads|facebook|linkedin]
                   [--model MODEL] [--raw]
 
   # Auto-derive topic from a Higgsfield job (reads the generation prompt from metadata):
@@ -75,6 +75,33 @@ BRANDS = {
         "scope": "clinician-supervised metabolic & longevity protocols",
     },
 }
+
+# Per-platform caption shape (SOUL §6 + MIGRATION §1A.4). Each platform gets a
+# UNIQUE caption — never the same text verbatim — and a different shape. Injected
+# into the user prompt so the model writes to the right length/format per channel.
+# `x` is an alias of `twitter` (the brief/publish layer uses "x"; Blotato uses
+# "twitter"). The legacy 4 platforms keep their prior behavior (backward-compatible).
+PLATFORM_SHAPES = {
+    "instagram": "Instagram: a hook line, then a 2–3 sentence payoff, then \"Save this.\", "
+                 "then a rotating CTA. Scannable and conversational.",
+    "tiktok": "TikTok: ONE punchy hook sentence and a punchy CTA — very short. "
+              "Up to 5 hashtags in the body is fine.",
+    "youtube": "YouTube Shorts: front-load the compound/topic name; a 2–3 sentence "
+               "description; end on a subscribe CTA.",
+    "twitter": "X (Twitter): ONE bold, specific claim or finding in 280 characters or fewer. "
+               "ZERO hashtags. A single opinion, not a list. Sparing emoji.",
+    "threads": "Threads: a casual, conversational, slightly more personal repurpose of the "
+               "Instagram angle. Shorter and lighter. No hashtag wall.",
+    "facebook": "Facebook: a clear, informative repurpose for broad reach — a little longer-form, "
+                "plainspoken, minimal hashtags.",
+    "linkedin": "LinkedIn: 3–5 short paragraphs. Open on a data point, close on a question. "
+                "Professional and sourced; at most a few hashtags.",
+}
+
+
+def shape_key(platform: str) -> str:
+    """Normalize a platform name to its caption-shape key (`x` → `twitter`)."""
+    return "twitter" if platform in ("twitter", "x") else platform
 
 # ── Brand voice + compliance system prompt (from BRAND.md §4/§8 + CLAUDE.md) ──
 
@@ -147,12 +174,19 @@ def load_api_key():
 
 
 def build_user_prompt(args, brand):
+    pkey = shape_key(args.platform)
     parts = [
         f"Brand: Acme {args.brand.title()} ({brand['scope']}).",
         f"Tagline: {brand['tagline']}. Handle: {brand['handle']}. URL: {brand['url']}.",
         f"Topic: {args.topic}.",
         f"Target platform for the caption: {args.platform}.",
+        f"Platform caption shape — follow it exactly: {PLATFORM_SHAPES[pkey]}",
     ]
+    if pkey == "twitter":
+        parts.append(
+            "HARD RULE for X: the caption MUST be ≤280 characters and contain NO '#' hashtags; "
+            "return an EMPTY \"hashtags\" array."
+        )
     if args.product_feature:
         chips = []
         if args.compound:
@@ -334,7 +368,9 @@ def main():
     ap.add_argument("--kind", choices=["full", "overlay", "caption"], default="full",
                     help="(reserved) which copy to emphasize; full returns everything")
     ap.add_argument("--platform", default="instagram",
-                    choices=["instagram", "tiktok", "twitter", "youtube"])
+                    choices=["instagram", "tiktok", "twitter", "x", "youtube",
+                             "threads", "facebook", "linkedin"],
+                    help="Caption shape per SOUL §6 / §1A.4. `x` aliases `twitter`.")
     ap.add_argument("--product-feature", action="store_true", dest="product_feature",
                     help="Triggers RUO auto-append + class/COA chip framing")
     ap.add_argument("--compound", help="Compound name for the class/COA chips")

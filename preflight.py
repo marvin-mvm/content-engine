@@ -94,7 +94,7 @@ TEXT_REQUEST = re.compile(
     r"words?\s+that\s+say|says|reads|written|writing|label|wordmark)\b",
     re.IGNORECASE,
 )
-NEGATION_BEFORE = re.compile(r"(no|without|free of|zero|devoid of|avoid|sans)\s+$", re.IGNORECASE)
+NEGATION_NEAR = re.compile(r"\b(no|without|free of|zero|devoid of|avoid|avoiding|sans|never|exclude|excluding)\b", re.IGNORECASE)
 QUOTED_LITERAL = re.compile(r"""["'“”‘’]([^"'“”‘’]*[A-Za-z]{2,}[^"'“”‘’]*)["'“”‘’]""")
 
 # Content that means "this is a product/spokesperson AD" → must route to DTC Ads
@@ -122,12 +122,17 @@ def template_aspect(template: str):
 
 
 def find_text_requests(creative: str):
-    """Return offending text-render requests in the creative prompt (empty = clean)."""
+    """Return offending text-render requests in the creative prompt (empty = clean).
+
+    A text word is allowed when negated in the SAME clause ("no on-screen text",
+    "without lettering") — that's an instruction NOT to render text. It's a
+    violation only when text is actually requested.
+    """
     hits = []
     for m in TEXT_REQUEST.finditer(creative):
-        pre = creative[max(0, m.start() - 14):m.start()]
-        if NEGATION_BEFORE.search(pre):
-            continue  # "no text", "without lettering" → fine
+        clause = re.split(r"[.,;]", creative[max(0, m.start() - 40):m.start()])[-1]
+        if NEGATION_NEAR.search(clause):
+            continue
         hits.append(m.group(0))
     for m in QUOTED_LITERAL.finditer(creative):
         hits.append(f'quoted literal {m.group(0)}')

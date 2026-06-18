@@ -225,6 +225,15 @@ def cmd_marketplace_card(prompt, product_image, no_wait):
 def _handle_job_result(result, no_wait, kind):
     if isinstance(result, list) and result:
         result = result[0]
+    # `generate create … --json` returns the new job id as a BARE string, not an
+    # object — normalize it so a successful submit isn't mistaken for an error
+    # (this mis-handling caused a double-submit once: the crash hid a real job id).
+    if isinstance(result, str):
+        result = {"id": result}
+    if not isinstance(result, dict):
+        print(json.dumps({"kind": kind, "error": "unexpected (non-object) response from higgsfield",
+                          "raw": result}, ensure_ascii=False, indent=2))
+        return
     job_id = result.get("id") or result.get("job_id")
     if not job_id:
         print(json.dumps(result, indent=2))

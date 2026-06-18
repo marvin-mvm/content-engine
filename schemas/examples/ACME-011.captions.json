@@ -1,0 +1,16 @@
+{
+  "_comment": "captions.json contract for publish.py (F1). One UNIQUE caption per platform (SOUL §6 — never verbatim-shared). A value is a STRING (single post) or an OBJECT {text, thread[], title}. Keyed by brief platform-name (x, tiktok, instagram, threads, facebook, youtube). X must be ≤280 chars/post and 0 hashtags. Labs posts must carry the RUO line somewhere in the post (incl. thread). This file mirrors the real ACME-011 BPC-157 carousel that published to X (thread) + TikTok.",
+  "x": {
+    "text": "Everyone talks about BPC-157 like the science is settled. It isn't — and that's exactly what makes it worth a closer look. A short thread on what the research actually shows.",
+    "thread": [
+      "In preclinical models, BPC-157 upregulates VEGFR2 — a receptor that drives blood-vessel formation — and engages VEGF and ERK1/2 signaling tied to tissue perfusion. The mechanism is genuinely interesting.",
+      "Animal studies also report increased collagen deposition and fibroblast migration across tendon, muscle, bone, skin and gut — plus modulation of nitric-oxide signaling.",
+      "The honest part: human evidence is limited to a few tiny pilot studies. No FDA approval, WADA-prohibited (2025). Promising ≠ proven. (Yuan et al., Int. J. Mol. Sci., 2026)\n\nFor research use only — not for human consumption."
+    ]
+  },
+  "tiktok": "BPC-157 keeps going viral — but what does the research actually say?\n\nThe mechanism is real in preclinical models: blood-vessel signaling (VEGFR2), collagen and fibroblast activity, and tissue-repair pathways studied across tendon, muscle, bone, skin and gut.\n\nThe honest part: human data is still limited to a few small pilot studies. Promising, not proven.\n\nSource: Yuan et al., Int. J. Mol. Sci. 2026.\nFor research use only — not for human consumption.\n\n#peptides #BPC157 #longevity #research #biohacking",
+  "youtube": {
+    "title": "BPC-157: What the Research Actually Shows (Pentadecapeptide)",
+    "text": "BPC-157 is one of the most-discussed research peptides. Here's the honest preclinical picture — mechanism vs. the limits of current human data. For research use only — not for human consumption."
+  }
+}
