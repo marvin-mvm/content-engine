@@ -49,6 +49,20 @@
     "script": { "type": "string", "description": "Optional: exact voiceover/spoken script (used to reconcile Whisper mishears)." },
     "compound": { "type": "string" },
     "class": { "type": "string" },
-    "product_feature": { "type": "boolean", "default": false }
+    "product_feature": { "type": "boolean", "default": false },
+    "reference": {
+      "type": "object",
+      "description": "F3 provenance: the exact source that inspired this post + why it was selected. METADATA ONLY — F2 surfaces it at approval (\"Reference: <description> — <url>\"); it MUST NEVER appear in the published caption (F1 publish gate enforces this). Mode A (topic discovery) carries no url.",
+      "additionalProperties": true,
+      "properties": {
+        "url": { "type": ["string", "null"], "description": "The exact inspiring video/post — reviewable later. null for Mode A topic discovery." },
+        "platform": { "type": "string" },
+        "description": { "type": "string", "description": "Human-readable: title + view/velocity (Mode B) or topic + signal (Mode A)." },
+        "selection_rationale": { "type": "string", "description": "One sentence: why this was picked." },
+        "cloned_format": { "type": "string", "description": "Mode B: the viral FORMAT recipe cloned (structure only)." },
+        "extracted_hook": { "type": "string", "description": "Mode B: the source hook — reference only, never reused as content." },
+        "scoring_breakdown": { "type": "object" }
+      }
+    }
   }
 }

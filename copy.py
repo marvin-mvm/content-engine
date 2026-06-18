@@ -160,6 +160,59 @@ You output ONLY a JSON object — no prose, no code fences — with exactly thes
 """
 
 
+# ── Carousel deck system prompt (--carousel N) — Devon's Stage 3 "slide copy" ──
+# Reuses the same Research-Pharmacist voice + compliance as BRAND_SYSTEM, but emits
+# an N-slide deck instead of one card. Built with .format(n=, ruo_rule=) at call time.
+CAROUSEL_SYSTEM = """\
+You are the copywriter for Acme, a dual-brand longevity company, writing in ONE \
+persona: "The Research Pharmacist" — calm, rigorous, plainspoken, the most credible \
+voice in the room and never the loudest. You connect through trust, not urgency.
+
+You are writing an INSTAGRAM CAROUSEL: a deck of exactly {n} slides that teaches ONE \
+idea, slide by slide, building from a hook to a close.
+
+NON-NEGOTIABLE VOICE: reading level grade 8-9; plain English; define any acronym on \
+first use; sourced, specific, patient; never hyped, never vague. Serious, conversational, \
+matter-of-fact. Comfortable saying "the evidence is mixed."
+
+COMPLIANCE (hard stops): NEVER say a compound "treats", "cures", "prevents", "heals", \
+"fixes", or is "proven to" do anything. Frame as "research suggests" / "studies report" / \
+"in preclinical models" / "participants reported". Dosage is research context only — never \
+personal medical advice. Never name or disparage a competitor. Acme Labs material is \
+research-use-only, never for human use. No "miracle/breakthrough/game-changer".
+
+SLIDE-DECK STRUCTURE (exactly {n} slides, in order):
+- Slide 1 = the HOOK / cover: the promise of the whole deck. EYEBROW = the topic label.
+- Middle slides = ONE idea each (mechanism, evidence, comparison, caveat) — build the argument.
+- Final slide = the closer. {ruo_rule}
+- Each slide carries: EYEBROW (2-4 words, ALL CAPS, a category label); a 3-part headline \
+HEAD_1 + HEAD_2_ITALIC + HEAD_3 that reads as ONE short phrase (<=6 words total; \
+HEAD_2_ITALIC is the 1-3 word emphasis rendered green italic; HEAD_3 may be ""); and \
+BODY (1-3 plain sentences, <=45 words, with a source where you make a research claim).
+
+You output ONLY a JSON object — no prose, no code fences — with exactly these keys:
+{{
+  "slides": [
+    {{"EYEBROW": "...", "HEAD_1": "...", "HEAD_2_ITALIC": "...", "HEAD_3": "...", "BODY": "..."}}
+  ],
+  "caption": "the Instagram caption: hook line, 2-3 short sentences, a CTA",
+  "hashtags": ["#tag", "..."],
+  "alt_text": "literal description of the carousel for accessibility"
+}}
+The "slides" array MUST have exactly {n} objects.
+"""
+
+_RUO_SLIDE_RULE_LABS = (
+    "For Acme LABS: the final slide's EYEBROW = \"RESEARCH USE ONLY\" and its BODY MUST "
+    "end with the exact sentence \"For research use only — not for human consumption.\""
+)
+_RUO_SLIDE_RULE_HEALTH = (
+    "Close with a clear, compliant CTA (e.g. explore the protocol / read the research) — "
+    "no promised outcomes, no specific human dosing."
+)
+RUO_SENTENCE = "For research use only — not for human consumption."
+
+
 def load_api_key():
     env_file = SCRIPT_DIR / ".env"
     if env_file.exists():
@@ -307,6 +360,74 @@ def enforce(result, args, brand):
     return result, warnings
 
 
+def build_carousel_user_prompt(args, brand):
+    parts = [
+        f"Brand: Acme {args.brand.title()} ({brand['scope']}).",
+        f"Tagline: {brand['tagline']}. Handle: {brand['handle']}. URL: {brand['url']}.",
+        f"Topic: {args.topic}.",
+        f"Build a {args.carousel}-slide carousel that teaches this topic clearly.",
+        f"Target platform for the caption: {args.platform}.",
+    ]
+    if args.product_feature:
+        chips = []
+        if args.compound:
+            chips.append(f"compound: {args.compound}")
+        if args.cls:
+            chips.append(f"class: {args.cls}")
+        parts.append(
+            "This deck features an Acme product — reference where natural ("
+            + "; ".join(chips) + "). Keep strict research framing."
+        )
+    parts.append("Return the JSON object only, with exactly "
+                 f"{args.carousel} slides in the \"slides\" array.")
+    return "\n".join(parts)
+
+
+def enforce_carousel(result, args, brand):
+    """Compliance net for --carousel decks: banned-claim scan over every slide + the
+    caption, RUO on the final Labs slide, and the shared caption/emoji checks."""
+    warnings = []
+    result["HANDLE"] = brand["handle"]
+    result["BRAND_NAME"] = brand["wordmark"]
+
+    slides = result.get("slides")
+    if not isinstance(slides, list) or not slides:
+        warnings.append("model returned no 'slides' array")
+        return result, warnings
+    if len(slides) != args.carousel:
+        warnings.append(f"model returned {len(slides)} slides (asked for {args.carousel})")
+
+    # Banned-claim scan across every slide's text.
+    for i, s in enumerate(slides, 1):
+        blob = " ".join(str(s.get(k, "")) for k in ("HEAD_1", "HEAD_2_ITALIC", "HEAD_3", "BODY"))
+        if BANNED.search(blob):
+            warnings.append(f"slide {i} contains a banned claim word: {BANNED.search(blob).group(0)!r}")
+
+    # RUO on the final slide for Labs / product-feature decks (auto-append if missing).
+    if (args.brand == "labs" or args.product_feature):
+        last = slides[-1]
+        body = last.get("BODY", "")
+        if not re.search(r"research use only|not for human consumption", body, re.IGNORECASE):
+            last["BODY"] = (body.rstrip() + " " + RUO_SENTENCE).strip()
+            warnings.append("RUO sentence auto-appended to the final slide")
+
+    # Shared caption checks (banned, lead-word, emoji policy).
+    caption = result.get("caption", "")
+    if BANNED.search(caption):
+        warnings.append(f"caption contains a banned claim word: {BANNED.search(caption).group(0)!r}")
+    first = caption.lstrip().split(maxsplit=1)
+    if first and first[0].strip(".,!:").lower() in {"i", "acme"}:
+        warnings.append(f"caption opens with disallowed word: {first[0]!r}")
+    emojis = EMOJI_RE.findall(caption)
+    bad = [e for e in emojis if e not in ALLOWED_EMOJI]
+    if bad:
+        warnings.append(f"caption uses non-approved emoji: {bad}")
+    if len(emojis) > 3:
+        warnings.append(f"caption uses {len(emojis)} emoji (max 3)")
+
+    return result, warnings
+
+
 def strip_brand_block(prompt: str) -> str:
     """Drop the leading brand visual-style block from a generation prompt.
 
@@ -371,6 +492,9 @@ def main():
                     choices=["instagram", "tiktok", "twitter", "x", "youtube",
                              "threads", "facebook", "linkedin"],
                     help="Caption shape per SOUL §6 / §1A.4. `x` aliases `twitter`.")
+    ap.add_argument("--carousel", type=int, metavar="N",
+                    help="Generate an N-slide carousel deck (output: slides[] + caption + "
+                         "hashtags + alt_text) instead of a single card. 5 is a good default.")
     ap.add_argument("--product-feature", action="store_true", dest="product_feature",
                     help="Triggers RUO auto-append + class/COA chip framing")
     ap.add_argument("--compound", help="Compound name for the class/COA chips")
@@ -387,9 +511,19 @@ def main():
     api_key = load_api_key()
     brand = BRANDS[args.brand]
 
+    if args.carousel:
+        if args.carousel < 2 or args.carousel > 10:
+            ap.error("--carousel N must be between 2 and 10 (Instagram allows 2-10 slides)")
+        ruo_rule = _RUO_SLIDE_RULE_LABS if args.brand == "labs" else _RUO_SLIDE_RULE_HEALTH
+        system = CAROUSEL_SYSTEM.format(n=args.carousel, ruo_rule=ruo_rule)
+        user = build_carousel_user_prompt(args, brand)
+    else:
+        system = BRAND_SYSTEM
+        user = build_user_prompt(args, brand)
+
     messages = [
-        {"role": "system", "content": BRAND_SYSTEM},
-        {"role": "user", "content": build_user_prompt(args, brand)},
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
     ]
     resp = call_openrouter(messages, args.model, api_key)
 
@@ -399,7 +533,10 @@ def main():
 
     content = resp["choices"][0]["message"]["content"]
     result = extract_json(content)
-    result, warnings = enforce(result, args, brand)
+    if args.carousel:
+        result, warnings = enforce_carousel(result, args, brand)
+    else:
+        result, warnings = enforce(result, args, brand)
 
     for w in warnings:
         print(f"[copy] WARNING: {w}", file=sys.stderr)

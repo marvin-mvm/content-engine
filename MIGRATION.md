@@ -215,11 +215,51 @@ These build on the Content Generation Module's job-folder output. None are start
 | # | Module | What it is | Effort | Notes |
 |---|---|---|---|---|
 | F1 | **Publishing (Blotato)** ✅ built | Per-job: `publish.py` from the M6 package, per-platform captions, hard compliance gate, record `published_posts` | 🟡 Medium | **BUILT 2026-06-17** (0 credits). Flow first PROVEN on ACME-011 (→ X live + TikTok scheduled, Operator signed off) via a supervised semi-manual run, then **wrapped into `publish.py`** — one command, **dry-run by default** (`--go` to post), with a hard **compliance gate** (QC-pass flag · RUO on all Labs posts · Labs organic-only · banned-claims scan · media exists+aspect · X ≤280/0-hashtags) that runs in both modes. `copy.py` **bug #2 fixed** (per-platform captions: x/threads/facebook/linkedin). `blotato.py` bridge from F1 prototyping: `upload` (presigned PUT), `scheduleTime`→`scheduledTime`, post-status arg. Findings (RUNBOOK §11): **X threads DO chain** (follow-ups need per-post mediaUrls — `--also` is text-only, an enhancement); **YouTube = video only**; no first-comment field (hashtags in caption); can't delete a published post. **Still to build:** Instagram/Threads/FB Blotato connection (Operator's manual step — `publish.py` skips them with a warning); per-post thread images on X; post-status tracking; `published_posts` → **Supabase** (now logged to `<job>/published_posts.json`). |
-| F2 | **Telegram review layer** | `telegram.py` (sendPhoto/sendVideo/sendMediaGroup using existing bot token in `.env`) posts M6 packages to the managers' group; `approvals.py` parses `APPROVE/REJECT/REVISE ACME-NNN` replies via `getUpdates` → updates `content_drafts.status` + `review_notes` in Supabase; `trust.py` applies §16 score events | 🟡 Medium | Implemented LAST per Operator. Until then: review happens directly in Claude Code / job folders. |
+| F2 | **Telegram review layer** ✅ built | `telegram.py` (`sendMediaGroup` + a review card) pushes each M6 package to a **DEDICATED** engine bot + private group (`ENGINE_TELEGRAM_BOT_TOKEN`/`ENGINE_TELEGRAM_CHAT_ID` — **separate from OpenClaw's FROZEN bot, never reused**); `approvals.py` parses `APPROVE/REJECT/REVISE/HOLD ACME-NNN` via `getUpdates` (idempotent offset) → **APPROVE writes `qc.json {"passed":true}`** (the M6 sign-off `publish.py` requires) + per-job `status.json` + note; `engine.py` applies §16 trust events to `engine_state.json` (no separate `trust.py`). | 🟡 Medium | **BUILT 2026-06-18** with F4 (0 credits). The human's eyes in Telegram REPLACE the M6 visual-QC step. Status/notes are local `status.json` (Supabase additive later). Recipe: PIPELINE_RUNBOOK §14. |
 | F3 | **Research module** ✅ built | Manual-topic replacement: `research.py`, two modes, **0 Higgsfield credits**. **Mode A (topics)** — searchapi sweep (trends+news, cached) → the six SOUL §8 factors × `engine_state.topic_weights`, respects `blocked_topics`, prints a per-topic breakdown → top N. **Mode B (outliers/inbox)** — auto-mine YouTube by **view-velocity vs set median** + a **drop-a-link inbox** (any URL via `apify scrape`/`blotato source`) → extract pattern → **reconfigure** (clone the FORMAT, strip the claims, copy.py rewrites the hook in Research-Pharmacist voice + compliance) → Trending brief. Both → 1A.2 pillar presets (pillar→template+persona) + brand routing (labs RUO / health) → validated `brief.json` (+ `copy.json` + `research.json` provenance) → logged to `discovery_queue` + `daily_brief`. | 🟡🔴 Medium-Hard | **BUILT 2026-06-18** (0 credits). Decisions (Marvin): **local-JSON-first** (rows under `output/research/<date>/` via a storage-agnostic `DiscoveryStore`; Supabase `db.py` plugs in additively later) · **personas P1/P2/P3** (voice carried into copy.py; detail in `CONTENT_ENGINE_GUIDE §1`) · **auto-mine YouTube only**, TikTok/Reddit/IG/FB via drop-a-link (apify is priciest → fired once/URL, cached 7d). PROVEN both chains on one real run each: **ACME-013** (Mode A: Semaglutide 0.686 → stack/labs static-compound → rendered) + **ACME-014** (Mode B: 124.6× YouTube outlier → cloned `this_or_that` → Epithalon trending/labs story-reel → rendered), both brand-correct PNGs via `post.py`. **Deferred:** Supabase `db.py`; per-follower outlier normalization (needs a follower field apify doesn't expose — view-velocity used instead); carousel `slides.json` copy-gen (single-card fallback for now); auto TikTok/Reddit mining. Recipe: `PIPELINE_RUNBOOK.md §13`. |
-| F4 | **Scheduling** | macOS launchd → headless `claude -p` runs: 05:00 research · 05:30 production (5 pillars) · 07:00 review packages · **publish at 08:00 / 11:00 / 13:00 / 16:00 / 19:00 PT** (5 pillar slots, Part 1A) each preceded by an approval check · 23:00 measure (Stage 7) · Mon 09:00 analytics + weekly report. Permissions allowlist in `.claude/settings.json` so runs never stall | 🟢 Easy (after F1–F3) | Cloud `/schedule` routines are NOT suitable (no local higgsfield/ffmpeg/Playwright/creds). Local launchd only. |
+| F4 | **Scheduling** ✅ built | **pure-Python launchd** (NOT headless `claude -p` — Marvin's call 2026-06-18: the only LLM cost stays `copy.py`, zero agent tokens): 4 jobs in `launchd/` — `produce` 05:30 → `review` 07:00 → `approvals` poll every 5m → `publish` at 08:00/11:00/13:00/16:00/19:00 PT (each slot publishes its own approved jobs). `install.sh` (un)loads them; permissions allowlist in `.claude/settings.json`. | 🟢 Easy (after F1–F3) | **BUILT 2026-06-18** (0 credits). Orchestrators: `produce_daily.py` (the `copy.json`→`captions.json` **bridge** + RUO on every Labs caption + X-fit) · `publish_slot.py` (slot inference, never double-posts, SOUL §19). **Supervised**: publish stays dry-run until `output/GO_LIVE`; `output/STOP` kill-switch; per-day caps (copy 30 / searchapi 20 / apify 3). 23:00 measure + Mon analytics are F5-era. Cloud `/schedule` unsuitable (local creds). Recipe: PIPELINE_RUNBOOK §14. |
 | F5 | **Feedback loop (lite)** | Weekly weighted-scoring updater (Part 1A.6): reads `performance_data` → nudges pillar weights / format prefs / topic boosts / hook patterns / persona weighting in the `content_strategy_config` table (Supabase); Monday Telegram report | 🟡 Medium | Adopted from Devon's Stage 8 but de-scoped from "intelligence layer" to a weights updater. Needs months of data to matter. |
 | F6 | **Parallel run + cutover** | 2–3 days dry-run (publish disabled) → 1 supervised live day → decommission (Part 4); drop the Sheet, keep only Supabase | 🟢 Easy, time-gated | OpenClaw stays fully operational until this point. The single switching moment. |
+
+### Planned enhancement (2026-06-18, Marvin) — **reference provenance** (spans F3 → F2 → F1)
+
+Every Mode-B post must record **the exact video that inspired it + why we picked it**, keep it
+reviewable, surface it at approval time, and **never leak it into the published post.** Spec:
+
+- **F3 (producer) — ✅ BUILT 2026-06-18.** A single `reference` object is attached to each
+  `brief.json` + the `daily_brief` row (and to `research.json`):
+  `{ url, platform, description (title + view/velocity), selection_rationale (one sentence, e.g.
+  "124.57× the niche-baseline view velocity on youtube; scored 34/40; cloned the This-or-That
+  structure"), cloned_format, extracted_hook (reference-only), scoring_breakdown }`. Mode A carries
+  `selection_rationale` + signals, **no `url`**. Added an optional `reference` property to
+  `brief.schema.json` (additive, backward-compatible). Proven: ACME-016 (Mode A) + ACME-017 (Mode B)
+  carry it; the source claim *"tortures belly fat"* stayed in `extracted_hook` and was **absent from
+  the caption** (copy.py never sees the reference). `daily_brief` mirrors it as
+  `reference_url`/`reference_description`/`selection_rationale`.
+- **Supabase** (still TODO) — when `db.py` lands, add `reference_url`, `reference_description`,
+  `selection_rationale` (or a single JSONB `reference`) to `daily_brief`; propagate to `content_drafts`.
+  The local `daily_brief.json` already carries these columns.
+- **F2 (Telegram review)** (still TODO) — the approval card appends **`📎 Reference: <description> —
+  <url>`** so the reviewer can open the exact source video before approving. (Adds a requirement to
+  the F2 row — read `brief.reference`.)
+- **F1 (publish)** (still TODO) — the reference is **metadata only**; add a hard assertion to the
+  publish compliance gate that no `reference_*` text appears in the caption. (Already true by
+  construction — copy.py never receives the reference — but the gate should enforce it explicitly.)
+
+> Sequencing: the **F3-producer half is done**; the **Supabase columns + F2 surfacing + F1 publish
+> guard** land with F2/F1 work, after F4 (in flight in a parallel session).
+
+### IG/FB drop-link extraction — open item (2026-06-18)
+
+`blotato source` only has first-class extractors for **YouTube + TikTok**; any other `http` URL is
+scraped as a generic `article` ([blotato.py](blotato.py)). IG/FB reels are auth-gated + JS-rendered,
+so the binding limit is Meta, not Blotato. **Tested empirically (2026-06-18):** an IG reel through
+`blotato source` returned `type: article` with `title: "Down chevron icon"` and a "summary" that was
+the **login-wall chrome + comment section** ("Log In / Sign Up / Never miss a post…") — **no caption,
+no transcript, no hook.** Verdict: IG **cannot** ride the Blotato link-drop. `apify` stays the only IG
+path (purpose-built actors, fragile per Part 5.1) — and even it should be treated as best-effort.
+Practical guidance: for an IG/FB drop, lead with the **human's one-line note** + `apify scrape`; don't
+route Meta through `blotato source`. (FB not separately tested — same Meta auth wall expected.)
 
 ---
 

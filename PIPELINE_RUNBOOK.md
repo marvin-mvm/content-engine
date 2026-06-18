@@ -581,7 +581,107 @@ replaces `DiscoveryStore` additively at cutover). Then: `python3 post.py output/
 → **M6 visual QC** (§9.3). Add `--fresh` to any command to bypass the cache; `--dry-run` to score
 without spending on copy.py or writing briefs.
 
+**Reference provenance (in every brief).** Each `brief.json` carries a **`reference`** block — the
+exact source that inspired the post + *why* it was picked: `{ url, platform, description,
+selection_rationale, cloned_format, extracted_hook, scoring_breakdown }` (Mode A carries no `url`;
+mirrored to the `daily_brief` row as `reference_url`/`reference_description`/`selection_rationale`).
+It is **metadata only** — `copy.py` never sees it, so the source's hook/claims **cannot leak into
+the caption** (verified: the ACME-017 source claim "tortures belly fat" stayed in `extracted_hook`,
+absent from the Epithalon caption). **F2** surfaces it at approval (*"📎 Reference: <description> —
+<url>"*); the **F1** publish gate will assert it never appears in a post (next-step, MIGRATION Part 2).
+
+### 13.4 Full carousels (the save-rate pillars) — `--carousel N`
+```bash
+python3 research.py topics --candidates "BPC-157" --carousel 5    # 5-slide deck, not a cover card
+python3 research.py run --carousel                                # Mode-A (Science/Stack) briefs as carousels
+```
+Carousels are the backbone of **Science Simplified + Stack of the Day** — the save-rate pillars.
+With `--carousel N` (or any `carousel-*` template), `assemble_brief` calls **`copy.py --carousel N`**
+(Devon's Stage-3 slide copy: each slide = `EYEBROW + HEAD_1/HEAD_2_ITALIC/HEAD_3 + BODY`, slide 1 =
+hook, **final slide carries the RUO line for Labs**), writes **`slides.json`** into the job folder,
+and the brief points `post.py` at it → one brand-correct PNG per slide (1080×1350). Proven on
+**ACME-015** (BPC-157, 5 slides, M6 QC pass). `copy.py --carousel` is backward-compatible (new flag;
+single-card behaviour unchanged).
+
 > ⚠️ **Gotchas:** (1) per-follower normalization isn't possible — searchapi/apify don't expose the
-> author's follower count — so outlier ranking uses view-velocity only. (2) Carousel briefs render a
-> single cover card today; full `slides.json` copy-gen is a follow-up. (3) IG/FB/TikTok/Reddit are
-> **drop-a-link only** for now (only YouTube auto-mines) — paste the URL into `research.py inbox`.
+> author's follower count — so outlier ranking uses view-velocity only. (2) ✅ **Carousels now render
+> full decks** via `--carousel` (above); a single card is only the fallback if slide-gen fails. The
+> exact compound spec (purity/dose) isn't injected into carousel copy yet — the model paraphrases it
+> (minor). (3) IG/FB/TikTok/Reddit are **drop-a-link only** for now (only YouTube auto-mines) — paste
+> the URL into `research.py inbox`.
+
+---
+
+## 14. The autonomous loop (F4 + F2) — produce → review → publish (built 2026-06-18)
+
+The daily loop that ties the proven 0-credit core into **produce daily → review in Telegram →
+publish on approval**. A scheduler *without* an approval gate would auto-publish — which Marvin
+does NOT want — so F4 (scheduling) and F2 (Telegram approval) ship together. **Carousels + static
+cards only; video reels are EXCLUDED** (they cost Higgsfield credits + need hand-authored caption
+beats). **0 Higgsfield credits.** Pure-Python launchd (no `claude -p`); the only LLM cost is
+`copy.py` (OpenRouter, pennies). Shared core: **`engine.py`**.
+
+### 14.1 The three steps
+
+```
+A) produce_daily.py run --carousel     research.py run --carousel → post.py render → captions.json
+                                       (THE BRIDGE: copy.py --platform x|tiktok|instagram, RUO on
+                                        every Labs caption, X fit ≤280/0-hashtags) → slots + manifest
+B) telegram.py push-day                sendMediaGroup + review card → DEDICATED engine group
+   approvals.py poll                   getUpdates → APPROVE writes qc.json {"passed":true} + status
+C) publish_slot.py                     drain approvals → this slot's APPROVED jobs → publish.py
+```
+
+**Why the bridge exists:** `research.py` writes `copy.json` (one caption); `publish.py`'s gate needs
+`captions.json` (one UNIQUE caption per platform) **and the RUO line on EVERY Labs caption** — but
+`copy.py` only auto-appends RUO for `--product-feature` posts. `produce_daily.py` closes that gap so
+produced jobs pass the publish gate verbatim. The human's APPROVE in Telegram **writes the `qc.json`
+sign-off** that `publish.py` requires — i.e. Telegram review REPLACES the M6 visual-QC step.
+
+### 14.2 Per-job state (engine bookkeeping — never touches `brief.json`)
+
+| File (in the job folder) | Written by | Meaning |
+|---|---|---|
+| `captions.json` | `produce_daily` | per-platform captions (the F1 publish contract) |
+| `status.json` | all three | `produced → pushed → approved → published` (or `rejected/revise/held/failed`) + slot + history |
+| `qc.json` `{"passed":true}` | `approvals` on APPROVE | the M6 sign-off `publish.py` demands |
+| `output/engine/<date>/manifest.json` | `produce_daily` | the day's jobs + their PT slot |
+
+### 14.3 Safety rails (all under `output/`, gitignored)
+
+- **`output/STOP`** — kill-switch: `touch` halts every step instantly; `rm` resumes.
+- **`output/GO_LIVE`** — go-live switch: **absent ⇒ publishing is DRY-RUN (supervised).** `touch` flips
+  `publish_slot.py` to live `--go`. Flip only after watching a few supervised days (Blotato publishing
+  is irreversible — §11 P4).
+- **Spend caps** (`engine.py`, per-day): copy 30 / searchapi 20 / apify 3; override via `.env`
+  (`ENGINE_CAP_COPY` …). Inspect: `python3 engine.py`.
+- **Never double-post** (SOUL §19): a `published` job is skipped; no approval at a slot → held, nothing posted.
+- **Compliance hold** (SOUL §16): `engine_state.compliance_hold=true` stops `publish_slot` until owner clears it.
+
+### 14.4 Dedicated bot (F2 prerequisite — NEVER OpenClaw's)
+
+`telegram.py`/`approvals.py` read **`ENGINE_TELEGRAM_BOT_TOKEN` / `ENGINE_TELEGRAM_CHAT_ID`** — a bot +
+private group created via @BotFather, **separate from OpenClaw's frozen `TELEGRAM_BOT_TOKEN`** (Part 4).
+Until those keys exist, `telegram.py`/`approvals.py` no-op safely (and run with `--dry-run` to preview a
+card without a bot); `approvals.py apply "APPROVE ACME-NNN"` applies a command manually.
+
+### 14.5 Scheduling (launchd, PT) + bring-up
+
+`launchd/` holds 4 reference plists + `install.sh` (machine = `America/Los_Angeles`, so hours are PT):
+`produce` 05:30 · `review` 07:00 · `approvals` every 5m · `publish` 08/11/13/16/19.
+
+```bash
+cd launchd && ./install.sh install     # generate for this checkout + load (timers start; still dry-run)
+./install.sh status                    # what's loaded
+./install.sh uninstall                 # unload + remove
+```
+
+Recommended order: (1) create the bot + group, add `ENGINE_TELEGRAM_*` to `.env`; (2) `install.sh install`
+— publishing stays supervised (dry-run); (3) watch a few days (produce 05:30, push 07:00, APPROVE in
+Telegram, publish slots log "WOULD publish"); (4) `touch output/GO_LIVE` to go live.
+
+> **Proven 2026-06-18 (0 public posts):** full dry-run loop on **ACME-015** — bridge → `captions.json`
+> (gate blocks on only the missing `qc.json`) → review card → `approvals.py apply APPROVE` (writes
+> `qc.json`, status→approved, trust 0→8) → `publish_slot.py --slot 11:00` gate **PASS**, *would* post to
+> X (cover tweet) + TikTok (5 slides). Held-without-approval + STOP-flag-halts both verified. No live
+> `--go`, no launchd loaded, no `GO_LIVE` — those stay gated behind Marvin's sign-off.

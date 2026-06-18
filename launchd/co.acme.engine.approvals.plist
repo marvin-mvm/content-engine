@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Acme engine STEP B (read) — APPROVALS poller. Every 5 min: drain Telegram replies
+     (APPROVE/REJECT/REVISE) so an APPROVE lands well before its slot. Idempotent (offset).
+     No-op until ENGINE_TELEGRAM_BOT_TOKEN is set. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>co.acme.engine.approvals</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Library/Frameworks/Python.framework/Versions/3.13/bin/python3</string>
+    <string>/Users/operator/.openclaw/workspace/acme/approvals.py</string>
+    <string>poll</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/operator/.openclaw/workspace/acme</string>
+  <key>StartInterval</key><integer>300</integer>
+  <key>StandardOutPath</key><string>/Users/operator/.openclaw/workspace/acme/logs/engine.approvals.log</string>
+  <key>StandardErrorPath</key><string>/Users/operator/.openclaw/workspace/acme/logs/engine.approvals.log</string>
+  <key>RunAtLoad</key><false/>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>
+</dict>
+</plist>

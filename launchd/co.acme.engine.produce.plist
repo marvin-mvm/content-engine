@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Acme engine STEP A — PRODUCE. Daily 05:30 PT. Reference copy; install.sh regenerates
+     paths for the actual checkout. launchd uses the machine's LOCAL time (machine = PT). -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>co.acme.engine.produce</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Library/Frameworks/Python.framework/Versions/3.13/bin/python3</string>
+    <string>/Users/operator/.openclaw/workspace/acme/produce_daily.py</string>
+    <string>run</string>
+    <string>--carousel</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/operator/.openclaw/workspace/acme</string>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>30</integer></dict>
+  <key>StandardOutPath</key><string>/Users/operator/.openclaw/workspace/acme/logs/engine.produce.log</string>
+  <key>StandardErrorPath</key><string>/Users/operator/.openclaw/workspace/acme/logs/engine.produce.log</string>
+  <key>RunAtLoad</key><false/>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>
+</dict>
+</plist>

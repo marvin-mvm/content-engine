@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Acme engine STEP B (push) — REVIEW. Daily 07:00 PT: push the day's produced jobs to
+     the dedicated Telegram review group. Gives a window before the 08:00 first slot. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>co.acme.engine.review</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Library/Frameworks/Python.framework/Versions/3.13/bin/python3</string>
+    <string>/Users/operator/.openclaw/workspace/acme/telegram.py</string>
+    <string>push-day</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/operator/.openclaw/workspace/acme</string>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+  <key>StandardOutPath</key><string>/Users/operator/.openclaw/workspace/acme/logs/engine.review.log</string>
+  <key>StandardErrorPath</key><string>/Users/operator/.openclaw/workspace/acme/logs/engine.review.log</string>
+  <key>RunAtLoad</key><false/>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>
+</dict>
+</plist>

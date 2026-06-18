@@ -77,6 +77,10 @@ PILLAR_PRESETS = {
                  "persona": "P1", "slot": "19:00", "platforms": ["instagram", "x"]},
 }
 
+# Templates that produce a multi-slide deck (slides.json) rather than one card.
+CAROUSEL_TEMPLATES = {"carousel-dark", "carousel-light"}
+CAROUSEL_DEFAULT_SLIDES = 5
+
 # Persona voice hint injected into the copy.py topic string (copy.py has no persona
 # arg and we don't modify it — backward-compatible). MIGRATION 1A.1 / guide §1.
 PERSONA_VOICE = {
@@ -509,10 +513,13 @@ def route_brand(topic, pillar):
     return "labs"
 
 
-def run_copy(topic, brand, platform, product_feature, compound, cls, fresh=False):
-    """Call copy.py (M2) for the renderable overlay tokens + caption. Reuses copy.py's
-    compliance engine — the single source of truth for brand voice + banned claims."""
+def run_copy(topic, brand, platform, product_feature, compound, cls, fresh=False, carousel=None):
+    """Call copy.py (M2) for the renderable overlay tokens + caption (or, with carousel=N,
+    an N-slide deck: cp['slides']). Reuses copy.py's compliance engine — the single source
+    of truth for brand voice + banned claims."""
     args = [topic, "--brand", brand, "--platform", platform]
+    if carousel:
+        args += ["--carousel", str(carousel)]
     if product_feature:
         args += ["--product-feature"]
         if compound:
@@ -522,10 +529,28 @@ def run_copy(topic, brand, platform, product_feature, compound, cls, fresh=False
     return run_tool("copy.py", args, ttl=CACHE_TTL, fresh=fresh)
 
 
+def build_reference(*, url=None, platform="", description="", selection_rationale="",
+                    cloned_format=None, extracted_hook=None, scoring_breakdown=None):
+    """The provenance contract surfaced at approval (F2) and excluded from posts (F1).
+    Records the exact source + WHY it was picked, so a produced post is always traceable
+    back to the video/topic that inspired it. Mode A carries no url."""
+    ref = {"url": url, "platform": platform, "description": description,
+           "selection_rationale": selection_rationale, "scoring_breakdown": scoring_breakdown or {}}
+    if cloned_format:
+        ref["cloned_format"] = cloned_format
+    if extracted_hook:
+        ref["extracted_hook"] = extracted_hook
+    return ref
+
+
 def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
-                   provenance=None, job_id=None, dry_run=False, fresh=False):
+                   carousel=None, provenance=None, reference=None, job_id=None,
+                   dry_run=False, fresh=False):
     """Produce one post.py-ready type=image brief.json (+ copy.json + research.json
-    sidecars) from a selected topic. Returns the brief dict (and writes it unless dry-run)."""
+    sidecars) from a selected topic. Returns the brief dict (and writes it unless dry-run).
+
+    carousel=N (or a carousel-* template) -> a full N-slide deck: copy.py --carousel writes
+    slides.json and the brief points post.py at it. Otherwise a single branded card."""
     preset = PILLAR_PRESETS[pillar]
     persona = persona or preset["persona"]
     brand = brand or route_brand(topic, pillar)
@@ -533,6 +558,12 @@ def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
     product_feature = preset.get("product_feature", False)
     compound = _catalog_match(topic)
     cls = COMPOUND_CATALOG.get(compound, {}).get("cls") if compound else None
+
+    # Carousel intent: an explicit N, or a carousel-* template was chosen.
+    want_carousel = bool(carousel) or template in CAROUSEL_TEMPLATES
+    if want_carousel and template not in CAROUSEL_TEMPLATES:
+        template = "carousel-light" if brand == "health" else "carousel-dark"
+    n_slides = carousel or CAROUSEL_DEFAULT_SLIDES
 
     job_id = job_id or next_job_id()
     brief = {
@@ -545,29 +576,49 @@ def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
             brief["class"] = cls
     if product_feature:
         brief["product_feature"] = True
+    # Reference travels IN the brief (metadata only) so F2 can surface it and publish can
+    # exclude it. It is never passed to copy.py, so it cannot leak into the caption.
+    if reference:
+        brief["reference"] = reference
 
     if dry_run:
-        log(f"DRY-RUN would assemble {job_id}: {pillar}/{persona}/{brand} <- {topic[:60]!r}")
+        fmt = f"carousel×{n_slides}" if want_carousel else template
+        log(f"DRY-RUN would assemble {job_id}: {pillar}/{persona}/{brand} [{fmt}] <- {topic[:60]!r}")
         return brief
-
-    # M2 — fill renderable tokens via copy.py (persona hint folded into the topic).
-    copy_topic = f"{topic}\n{PERSONA_VOICE.get(persona, '')}".strip()
-    cp = run_copy(copy_topic, brand, "instagram", product_feature, compound, cls, fresh=fresh)
-    if not cp:
-        log(f"copy.py failed for {job_id} — writing brief without tokens (run copy.py later)")
-        cp = {}
-
-    tokens = _map_tokens(template, cp, brand, compound, product_feature)
-    brief["image"] = {"template": f"templates/src/{template}.html", "bg_policy": "plain",
-                      "set": tokens}
 
     job_dir = JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
+    bn = "ACME HEALTH" if brand == "health" else "ACME LABS"
+    handle = "@acmehealth" if brand == "health" else "@acmelabs"
+
+    # M2 — fill renderable copy via copy.py (persona hint folded into the topic).
+    copy_topic = f"{topic}\n{PERSONA_VOICE.get(persona, '')}".strip()
+    cp = run_copy(copy_topic, brand, "instagram", product_feature, compound, cls,
+                  fresh=fresh, carousel=n_slides if want_carousel else None)
+    if not isinstance(cp, dict) or not cp:
+        log(f"copy.py failed for {job_id} — writing brief without tokens (run copy.py later)")
+        cp = {}
+
+    slides = cp.get("slides") if want_carousel else None
+    if want_carousel and slides:
+        # Full multi-slide deck: post.py renders one PNG per slide from slides.json.
+        (job_dir / "slides.json").write_text(json.dumps(slides, ensure_ascii=False, indent=2))
+        brief["image"] = {"template": f"templates/src/{template}.html", "bg_policy": "plain",
+                          "carousel": "slides.json",
+                          "set": {"BRAND_NAME": bn, "HANDLE": handle}}
+    else:
+        if want_carousel:
+            log(f"carousel copy.py returned no slides for {job_id} — single-card fallback")
+        tokens = _map_tokens(template, cp, brand, compound, product_feature)
+        brief["image"] = {"template": f"templates/src/{template}.html", "bg_policy": "plain",
+                          "set": tokens}
+
     (job_dir / "brief.json").write_text(json.dumps(brief, ensure_ascii=False, indent=2))
     if cp:
         (job_dir / "copy.json").write_text(json.dumps(cp, ensure_ascii=False, indent=2))
     (job_dir / "research.json").write_text(json.dumps(
-        {"job_id": job_id, "discovered_at": now_iso(), **(provenance or {})},
+        {"job_id": job_id, "discovered_at": now_iso(),
+         "reference": reference or {}, **(provenance or {})},
         ensure_ascii=False, indent=2))
 
     ok, errs = validate_brief(brief)
@@ -662,10 +713,13 @@ class DiscoveryStore:
             "engagement": engagement or {}, "scraped_at": now_iso(), **extra})
 
     def add_brief(self, *, pillar, persona, source_url="", format_type="", hook_angle="",
-                  scoring_breakdown=None, job_id="", brief_path=""):
+                  scoring_breakdown=None, job_id="", brief_path="", reference=None):
+        ref = reference or {}
         return self._append(self.db, {
-            "pillar": pillar, "persona_target": persona, "source_url": source_url,
+            "pillar": pillar, "persona_target": persona, "source_url": source_url or ref.get("url"),
             "format_type": format_type, "hook_angle": hook_angle[:300],
+            "reference_url": ref.get("url"), "reference_description": ref.get("description", ""),
+            "selection_rationale": ref.get("selection_rationale", ""), "reference": ref,
             "scoring_breakdown": scoring_breakdown or {}, "job_id": job_id,
             "brief_path": brief_path, "created_at": now_iso()})
 
@@ -706,14 +760,23 @@ def cmd_topics(args):
         topic = f"{s['topic']} research"
         jid = next_job_id(reserved)
         reserved.add(jid)
-        prov = {"discovery_mode": "A_topic", "scoring_breakdown": s,
-                "selected_topic": s["topic"]}
-        brief = assemble_brief(pillar, topic, job_id=jid, provenance=prov, fresh=args.fresh)
+        sig = s["signals"]
+        ref = build_reference(
+            platform="topic-discovery",
+            description=(f"Topic discovery: {s['topic']} — Google Trends {sig['trends_now']}/100, "
+                         f"{sig['news_count']} recent articles, newest {sig['newest_age_days']}d"),
+            selection_rationale=(f"Top SOUL §8 score {s['final']:.2f} (velocity "
+                                 f"{s['raw']['trending_velocity']:.2f}, search {s['raw']['search_volume']:.2f}, "
+                                 f"recency {s['raw']['recency']:.2f}); newest signal {sig['newest_age_days']}d ago."),
+            scoring_breakdown=s)
+        prov = {"discovery_mode": "A_topic", "selected_topic": s["topic"]}
+        brief = assemble_brief(pillar, topic, job_id=jid, provenance=prov, reference=ref,
+                               carousel=getattr(args, "carousel", None), fresh=args.fresh)
         store.add_discovery(platform="searchapi", content_type="topic",
                             caption=s["topic"], format_type=pillar,
                             engagement=s["signals"])
         store.add_brief(pillar=pillar, persona=brief["persona"], format_type=pillar,
-                        hook_angle=topic, scoring_breakdown=s, job_id=jid,
+                        hook_angle=topic, scoring_breakdown=s, job_id=jid, reference=ref,
                         brief_path=str(JOBS_DIR / jid / "brief.json"))
     log(f"Mode A wrote {len(picks)} brief(s) + discovery log -> {store.dir}")
 
@@ -744,8 +807,8 @@ def cmd_outliers(args):
         return
     top = outliers[0]
     log(f"extracting top outlier: {top['url']}")
-    _extract_and_brief(top["url"], store, persona="P3", brand="labs",
-                       curated=False, dry_run=args.dry_run, fresh=args.fresh)
+    _extract_and_brief(top["url"], store, persona="P3", brand="labs", curated=False,
+                       outlier_meta=top, dry_run=args.dry_run, fresh=args.fresh)
 
 
 def cmd_inbox(args):
@@ -757,7 +820,8 @@ def cmd_inbox(args):
 
 
 def _extract_and_brief(url, store, *, persona="P3", brand="labs", curated=False,
-                       acme_topic=None, pillar="trending", dry_run=False, fresh=False):
+                       acme_topic=None, pillar="trending", outlier_meta=None,
+                       dry_run=False, fresh=False):
     pattern = extract_pattern(url, fresh=fresh)
     if not pattern:
         log(f"extraction failed for {url}")
@@ -772,6 +836,25 @@ def _extract_and_brief(url, store, *, persona="P3", brand="labs", curated=False,
     print_outlier_score(sc, topic)
     recon = reconfigure(pattern, topic, persona)
 
+    # Reference provenance — the exact inspiring post + why we picked it (F2 surfaces it).
+    recipe = recon["format_recipe"]
+    if outlier_meta:
+        desc = (f"{outlier_meta.get('title','')} — {outlier_meta['views']:,} views, "
+                f"{int(outlier_meta['velocity']):,}/d, {outlier_meta['baseline_ratio']}× niche baseline "
+                f"({pattern['platform']})")
+        why = (f"{outlier_meta['baseline_ratio']}× the niche-baseline view velocity on "
+               f"{pattern['platform']}; scored {sc['total']}/40 (niche/persona/format/intent); "
+               f"cloned the '{recipe}' structure.")
+    else:
+        desc = f"{pattern['platform']} drop-a-link — hook: {pattern['hook'][:80]!r}"
+        why = (f"Curated drop-a-link; scored {sc['total']}/40 (niche/persona/format/intent); "
+               f"cloned the '{recipe}' structure.")
+    ref = build_reference(url=url, platform=pattern["platform"], description=desc,
+                          selection_rationale=why, cloned_format=recipe,
+                          extracted_hook=pattern["hook"], scoring_breakdown=sc)
+    print(f"  reference: {desc}")
+    print(f"  why:       {why}")
+
     store.add_discovery(source_url=url, platform=pattern["platform"],
                         caption=pattern.get("caption", "")[:300], content_type="outlier",
                         format_type=pattern["format_type"],
@@ -780,13 +863,11 @@ def _extract_and_brief(url, store, *, persona="P3", brand="labs", curated=False,
     if dry_run:
         log("dry-run: pattern extracted + scored, not assembling brief")
         return
-    prov = {"discovery_mode": "B_outlier", "source_url": url,
-            "source_platform": pattern["platform"], "cloned_format": recon["format_recipe"],
-            "source_hook_for_reference_only": pattern["hook"],
-            "scoring_breakdown": sc}
+    prov = {"discovery_mode": "B_outlier"}
     jid = next_job_id()
     brief = assemble_brief("trending", recon["hook_angle"], persona=persona, brand=brand,
-                           template=recon["template"], job_id=jid, provenance=prov, fresh=fresh)
+                           template=recon["template"], job_id=jid, provenance=prov,
+                           reference=ref, fresh=fresh)
     # Keep the brief.topic clean/human (the long copy.py angle lives in research.json).
     brief_path = JOBS_DIR / jid / "brief.json"
     bj = json.loads(brief_path.read_text())
@@ -794,7 +875,7 @@ def _extract_and_brief(url, store, *, persona="P3", brand="labs", curated=False,
     brief_path.write_text(json.dumps(bj, ensure_ascii=False, indent=2))
     store.add_brief(pillar="trending", persona=persona, source_url=url,
                     format_type=pattern["format_type"], hook_angle=topic,
-                    scoring_breakdown=sc, job_id=jid, brief_path=str(brief_path))
+                    scoring_breakdown=sc, job_id=jid, brief_path=str(brief_path), reference=ref)
     log(f"Mode B cloned {pattern['format_type']} format -> {jid} (topic: {topic!r})")
 
 
@@ -816,6 +897,8 @@ def main():
     pt.add_argument("--candidates", help="Comma-separated topics (default: top engine_state compounds)")
     pt.add_argument("--select", type=int, default=1, help="How many top topics to turn into briefs (default 1)")
     pt.add_argument("--pillar", choices=list(PILLAR_PRESETS), help="Force a pillar (default: stack if compound else science)")
+    pt.add_argument("--carousel", nargs="?", type=int, const=CAROUSEL_DEFAULT_SLIDES, metavar="N",
+                    help="Assemble full N-slide carousels (carousel-dark, slides.json) instead of single cards. Default N=5.")
     pt.add_argument("--dry-run", action="store_true", help="Score + select + print only; no copy.py, no briefs")
     pt.add_argument("--fresh", action="store_true", help="Bypass the API cache")
     pt.set_defaults(func=cmd_topics)
@@ -840,10 +923,13 @@ def main():
 
     pr = sub.add_parser("run", help="Full day: assemble briefs across pillars (topics + outliers)")
     pr.add_argument("--select", type=int, default=4, help="Mode A topics to select (default 4; +1 trending from outliers)")
+    pr.add_argument("--carousel", nargs="?", type=int, const=CAROUSEL_DEFAULT_SLIDES, metavar="N",
+                    help="Make the Mode-A (Science/Stack) briefs full N-slide carousels. Default N=5.")
     pr.add_argument("--dry-run", action="store_true")
     pr.add_argument("--fresh", action="store_true")
     pr.set_defaults(func=lambda a: (cmd_topics(argparse.Namespace(
-        candidates=None, select=a.select, pillar=None, dry_run=a.dry_run, fresh=a.fresh)),
+        candidates=None, select=a.select, pillar=None, carousel=a.carousel,
+        dry_run=a.dry_run, fresh=a.fresh)),
         cmd_outliers(argparse.Namespace(query=None, num=15, extract=True,
                                         dry_run=a.dry_run, fresh=a.fresh))))
 

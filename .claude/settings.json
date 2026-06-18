@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 produce_daily.py:*)",
+      "Bash(python3 telegram.py:*)",
+      "Bash(python3 approvals.py:*)",
+      "Bash(python3 publish_slot.py:*)",
+      "Bash(python3 publish.py:*)",
+      "Bash(python3 post.py:*)",
+      "Bash(python3 reel.py:*)",
+      "Bash(python3 research.py:*)",
+      "Bash(python3 copy.py:*)",
+      "Bash(python3 preflight.py:*)",
+      "Bash(python3 engine.py:*)",
+      "Bash(python3 blotato.py:*)",
+      "Bash(./launchd/install.sh:*)",
+      "Bash(launchctl list:*)",
+      "Bash(touch output/STOP)",
+      "Bash(touch output/GO_LIVE)",
+      "Bash(rm -f output/STOP)",
+      "Bash(rm -f output/GO_LIVE)"
+    ]
+  }
+}
