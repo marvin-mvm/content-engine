@@ -47,6 +47,19 @@ def _requests():
 
 
 # ── card composition ─────────────────────────────────────────────────────────
+def _cap_text(captions: dict, *platforms: str) -> str:
+    """First non-empty caption text across `platforms`, tolerating BOTH the plain-string and
+    the {text, thread} dict shapes a captions.json entry can take (publish.py's caption_for
+    normalizes the same way)."""
+    for p in platforms:
+        v = captions.get(p)
+        if isinstance(v, dict):
+            v = v.get("text", "")
+        if v:
+            return v
+    return ""
+
+
 def _hook(job_dir: Path, captions: dict) -> str:
     """Best available one-line hook: carousel slide 1, overlay HOOK_*, or X caption head."""
     cp = e.load_json(job_dir / "copy.json") or {}
@@ -60,8 +73,7 @@ def _hook(job_dir: Path, captions: dict) -> str:
                                    cp.get("HOOK_LINE_3")]))
     if line.strip():
         return line.strip()
-    x = captions.get("x") or captions.get("instagram") or ""
-    return x.split("\n", 1)[0][:120]
+    return _cap_text(captions, "x", "instagram").split("\n", 1)[0][:120]
 
 
 def _reference(job_dir: Path, brief: dict) -> dict:
@@ -97,10 +109,11 @@ def build_card(job_dir: Path) -> str:
     captions = e.load_json(job_dir / "captions.json") or {}
     st = e.read_status(job_id) or {}
     ref = _reference(job_dir, brief)
-    preview = (captions.get("instagram") or captions.get("x") or "").strip()
+    preview = _cap_text(captions, "instagram", "x").strip()
     if len(preview) > 320:
         preview = preview[:317].rstrip() + "…"
-    media_kind = "carousel" if brief.get("image", {}).get("carousel") else "static card"
+    media_kind = ("reel" if brief.get("type") == "reel"
+                  else "carousel" if brief.get("image", {}).get("carousel") else "static card")
     lines = [
         f"📋 *{job_id}* · {brief.get('pillar', '?').title()} · Acme {brief.get('brand', '?').title()}",
         f"🎯 Hook: {_hook(job_dir, captions)}",
@@ -122,6 +135,47 @@ def build_card(job_dir: Path) -> str:
         lines.append(f"📎 Why: {ref['selection_rationale']}")
     lines += [
         "",
+        f"Reply: `APPROVE {job_id}`  /  `REJECT {job_id} [note]`  /  `REVISE {job_id} [note]`",
+    ]
+    return "\n".join(lines)
+
+
+def build_concept_card(job_dir: Path) -> str:
+    """F7 GATE 1 — the CONCEPT review card sent BEFORE any Higgsfield credit. Shows the
+    spoken script + the branded-cover hook + the F3 reference, and states plainly that
+    APPROVE is the one action that spends a credit (Seedance b-roll). Same A/R/E reply
+    contract as the final card, but approvals.py routes it to the concept gate by status."""
+    job_id = job_dir.name
+    brief = e.load_json(job_dir / "brief.json") or {}
+    beats = e.load_json(job_dir / "script.json") or {}
+    ref = _reference(job_dir, brief)
+    cover = brief.get("cover", {}) or {}
+    cover_hook = " ".join(filter(None, [cover.get("HOOK_LINE_1"), cover.get("HOOK_LINE_2_ITALIC"),
+                                        cover.get("HOOK_LINE_3")])).strip()
+    script_text = (beats.get("full_text") or brief.get("script") or "(no script yet — run script.py)").strip()
+    if len(script_text) > 600:
+        script_text = script_text[:597].rstrip() + "…"
+    est = beats.get("est_seconds")
+    lines = [
+        f"🎬 *{job_id}* · CONCEPT REVIEW (reel) · {brief.get('pillar', '?').title()} · Acme {brief.get('brand', '?').title()}",
+        f"🎯 Hook: {beats.get('hook') or cover_hook or '—'}",
+        "",
+        f"📝 Script{f' (~{est}s)' if est else ''}:",
+        f"_{script_text}_",
+        "",
+        f"• Pillar: {brief.get('pillar', '?')}   • Persona: {brief.get('persona', '?')}",
+        f"• Brand: {brief.get('brand', '?')}   • Cover: {Path(cover.get('template', '')).stem or '—'}",
+        f"• Platforms: {', '.join(brief.get('platforms', [])) or '—'}",
+        f"• Source: {_source(job_dir, brief)}",
+    ]
+    if ref.get("url"):
+        lines.append(f"📎 Reference: {ref.get('description') or ref.get('platform') or 'source'}")
+        lines.append(f"   {ref['url']}")
+    elif ref.get("selection_rationale"):
+        lines.append(f"📎 Why: {ref['selection_rationale']}")
+    lines += [
+        "",
+        "⚠️ *APPROVE spends ~1 Higgsfield credit* (Seedance b-roll). REJECT / REVISE cost nothing.",
         f"Reply: `APPROVE {job_id}`  /  `REJECT {job_id} [note]`  /  `REVISE {job_id} [note]`",
     ]
     return "\n".join(lines)
@@ -177,22 +231,78 @@ def send_media_group(files: list[Path], dry_run: bool) -> bool:
     return True
 
 
+def send_video(path: Path, dry_run: bool) -> bool:
+    token, chat = _creds()
+    if dry_run or not token or not chat:
+        print(f"[video] {path.name}")
+        return True
+    r = _requests()
+    with path.open("rb") as fh:
+        resp = r.post(API.format(token=token, method="sendVideo"),
+                      data={"chat_id": chat}, files={"video": (path.name, fh, "video/mp4")},
+                      timeout=180, verify=e.tls_verify())
+    if resp.status_code != 200:
+        e.log(f"sendVideo failed {resp.status_code}: {resp.text[:200]}")
+        return False
+    return True
+
+
+def reel_final(job_dir: Path) -> Path | None:
+    """The rendered reel to review at GATE 2: the embedded final, else the captioned clip."""
+    for name in (f"{job_dir.name}-final.mp4", "captioned.mp4"):
+        p = job_dir / name
+        if p.exists():
+            return p
+    return None
+
+
 def push_job(job_dir: Path, dry_run: bool) -> bool:
+    """F4 final review (GATE 2). Reels send the captioned VIDEO; images send the PNG group."""
     job_id = job_dir.name
     if not (job_dir / "captions.json").exists():
         e.log(f"{job_id}: no captions.json — run produce_daily first. Skipping.")
         return False
-    files = media_files(job_dir)
-    if not files:
-        e.log(f"{job_id}: no media PNGs found — skipping.")
-        return False
-    ok = send_media_group(files, dry_run) and send_text(build_card(job_dir), dry_run)
+    brief = e.load_json(job_dir / "brief.json") or {}
+    if brief.get("type") == "reel":
+        vid = reel_final(job_dir)
+        if not vid:
+            e.log(f"{job_id}: no rendered reel (captioned.mp4 / {job_id}-final.mp4) — run RV4 first. Skipping.")
+            return False
+        ok = send_video(vid, dry_run) and send_text(build_card(job_dir), dry_run)
+    else:
+        files = media_files(job_dir)
+        if not files:
+            e.log(f"{job_id}: no media PNGs found — skipping.")
+            return False
+        ok = send_media_group(files, dry_run) and send_text(build_card(job_dir), dry_run)
     if ok and not dry_run:
         st = e.read_status(job_id) or {}
-        # only advance produced -> pushed; never clobber an approval already given
-        if st.get("status") in (None, "produced", "revise"):
+        # advance to pushed from a pre-review state (incl. a concept-approved reel); never
+        # clobber an approval already given.
+        if st.get("status") in (None, "produced", "revise", "concept_approved"):
             e.write_status(job_id, "pushed", pushed_at=e.now_iso())
     e.log(f"{job_id}: {'pushed to review group' if ok and not dry_run else 'previewed (dry-run)' if ok else 'push FAILED'}")
+    return ok
+
+
+def push_concept(job_dir: Path, dry_run: bool) -> bool:
+    """F7 GATE 1 — push a reel's CONCEPT (script + reference) for approval BEFORE generation.
+    Text-only (no media yet — the visual is reviewed at GATE 2). Advances the job to
+    'awaiting_concept' so approvals.py treats the next A/R/E as a concept decision."""
+    job_id = job_dir.name
+    brief = e.load_json(job_dir / "brief.json") or {}
+    if brief.get("type") != "reel":
+        e.log(f"{job_id}: concept gate is reels-only (type={brief.get('type')!r}) — skipping.")
+        return False
+    if not brief.get("script"):
+        e.log(f"{job_id}: no brief.script yet — run script.py (RV2) before GATE 1. Skipping.")
+        return False
+    ok = send_text(build_concept_card(job_dir), dry_run)
+    if ok and not dry_run:
+        st = e.read_status(job_id) or {}
+        if st.get("status") in (None, "produced", "concept_revise", "revise"):
+            e.write_status(job_id, "awaiting_concept", concept_pushed_at=e.now_iso())
+    e.log(f"{job_id}: {'concept pushed to review group' if ok and not dry_run else 'concept previewed (dry-run)' if ok else 'concept push FAILED'}")
     return ok
 
 
@@ -201,6 +311,12 @@ def cmd_push(args):
     e.assert_running("telegram-push")
     job_dir = Path(args.job_dir).resolve()
     sys.exit(0 if push_job(job_dir, args.dry_run) else 1)
+
+
+def cmd_push_concept(args):
+    e.assert_running("telegram-push-concept")
+    job_dir = Path(args.job_dir).resolve()
+    sys.exit(0 if push_concept(job_dir, args.dry_run) else 1)
 
 
 def cmd_push_day(args):
@@ -236,6 +352,11 @@ def main():
     pp.add_argument("job_dir")
     pp.add_argument("--dry-run", action="store_true", help="Print the package; send nothing")
     pp.set_defaults(func=cmd_push)
+
+    pcn = sub.add_parser("push-concept", help="F7 GATE 1: push a reel CONCEPT (script + reference) for approval BEFORE any credit")
+    pcn.add_argument("job_dir")
+    pcn.add_argument("--dry-run", action="store_true", help="Print the concept card; send nothing")
+    pcn.set_defaults(func=cmd_push_concept)
 
     pd = sub.add_parser("push-day", help="Push all produced, un-pushed jobs in today's manifest")
     pd.add_argument("--date")

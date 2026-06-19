@@ -54,8 +54,10 @@ PILLAR_SLOT = {                         # mirrors research.py PILLAR_PRESETS["sl
 
 # ── spend caps (per-day ceilings; Marvin-confirmed 2026-06-18) ─────────────────
 # Each is a hard daily ceiling; the loop refuses the call that would exceed it.
-# Overridable via .env (ENGINE_CAP_COPY / ENGINE_CAP_SEARCHAPI / ENGINE_CAP_APIFY).
-DEFAULT_CAPS = {"copy": 30, "searchapi": 20, "apify": 3}
+# Overridable via .env (ENGINE_CAP_COPY / ENGINE_CAP_SEARCHAPI / ENGINE_CAP_APIFY / ENGINE_CAP_REEL).
+# `reel` is the ONLY Higgsfield-credit-bearing cap: a HARD 2 reels/day ceiling (1 typical),
+# Marvin 2026-06-18 — reel_video.py (F7 RV3) spends it just before a Seedance generation.
+DEFAULT_CAPS = {"copy": 30, "searchapi": 20, "apify": 3, "reel": 2}
 
 # ── compliance — SINGLE SOURCE OF TRUTH is compliance.py (Red/Yellow/Green framework).
 #    Re-exported so existing callers keep working: e.BANNED / e.RUO_SENTENCE / e.RUO_RE,
@@ -159,7 +161,7 @@ def _read_budget(date: str | None = None) -> dict:
             return json.loads(p.read_text())
         except json.JSONDecodeError:
             pass
-    return {"date": date or today_pt(), "copy": 0, "searchapi": 0, "apify": 0}
+    return {"date": date or today_pt(), "copy": 0, "searchapi": 0, "apify": 0, "reel": 0}
 
 
 def budget_remaining(kind: str, date: str | None = None) -> int:
@@ -189,7 +191,10 @@ def spend(kind: str, n: int = 1, date: str | None = None) -> bool:
 
 # ── per-job status (engine bookkeeping; brief.json is left untouched) ────────────
 VALID_STATUS = {"produced", "pushed", "approved", "rejected", "revise",
-                "published", "held", "failed"}
+                "published", "held", "failed",
+                # F7 reel concept gate (GATE 1, pre-credit)
+                "awaiting_concept", "concept_approved", "concept_rejected",
+                "concept_revise", "concept_held"}
 
 
 def status_path(job_id: str) -> Path:

@@ -483,7 +483,7 @@ or an **object** `{text, thread[], title}`. X carries its thread in `thread[]` (
 | QC-pass flag | `qc.json` present with `passed: true` |
 | RUO | **every Labs-brand caption** carries the RUO line (line may sit anywhere in the post/thread) — decided strict 2026-06-17 (Operator): all Labs posts, not just product-features |
 | Labs = organic | Labs is never paid/boosted (no paid path exists; guards a future flag) |
-| Banned claims | `treats/cures/heals/fixes/prevents/diagnoses/proven to/guaranteed/miracle/…` across caption + thread |
+| Banned claims (RED) | **`compliance.py`** (single Red/Yellow/Green authority — `compliance.red_hits`) across caption + every thread post: heal/cure/treat/prevent/diagnose/reverse, "burns fat"/"builds muscle"/"regrows hair"/"boosts testosterone"/"repairs tendons", customer-directed "…your skin", testimonials, "for human/personal use", miracle/proven-to/guaranteed (all tenses; negation-aware). copywriter.py scans slides + warns with "say instead"; YELLOW efficacy verbs need research-subject framing |
 | Media | each file exists + aspect matches (carousel 4:5 · callout 1:1 · compound 4:5 · reel 9:16) |
 | X shape | each X post (main + each thread post) ≤280 chars **and** 0 hashtags (§1A.4) — decided hard-block 2026-06-17 |
 

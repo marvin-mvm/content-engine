@@ -13,7 +13,7 @@
     "pillar": { "enum": ["science", "stack", "trending", "proof", "founder"], "description": "Content pillar (Part 1A.2)" },
     "persona": { "enum": ["P1", "P2", "P3"], "description": "P1 optimizer | P2 affluent-woman | P3 newcomer" },
     "topic": { "type": "string", "minLength": 3 },
-    "platforms": { "type": "array", "items": { "enum": ["instagram", "tiktok", "x", "threads", "facebook"] }, "default": ["instagram", "tiktok"] },
+    "platforms": { "type": "array", "items": { "enum": ["instagram", "tiktok", "x", "threads", "facebook", "youtube"] }, "default": ["instagram", "tiktok"], "description": "youtube is video-only (reels): publish.py routes it only for type=reel and skips it for images." },
     "video": { "type": "string", "description": "REEL only: path to the source mp4 (relative to acme/). Copied into the build as input.mp4." },
     "caption_data": { "type": "string", "default": "caption_data.json", "description": "REEL only: filename (in the job folder) of the caption beats data; see caption_data.schema fields below." },
     "cover": {

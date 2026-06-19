@@ -71,6 +71,43 @@ def _reject_is_second_today() -> bool:
     return second
 
 
+# ── F7 GATE 1 — concept gate (pre-credit) ────────────────────────────────────
+def _apply_concept(verb: str, job_id: str, note: str, who: str, reply: bool, job_dir: Path) -> str:
+    """A reel at the concept gate (status=awaiting_concept) is PRE-generation: no credit
+    spent, no media yet. A/R/E here decides the CONCEPT only and is trust-NEUTRAL — trust
+    moves solely at the final gate (SOUL §16), so concept iteration never skews the curve.
+    APPROVE writes concept_qc.json, the marker RV3 requires before it may spend a credit."""
+    cqc = job_dir / "concept_qc.json"
+    if verb == "APPROVE":
+        cqc.write_text(json.dumps({"passed": True, "by": who, "at": e.today_pt(),
+                                   "via": "telegram-concept-approval", "note": note or None},
+                                  ensure_ascii=False, indent=2))
+        e.write_status(job_id, "concept_approved", reviewed_at=e.now_iso(),
+                       reviewed_by=who, review_note=note or None)
+        msg = (f"🎬 {job_id} concept approved by {who} — cleared to generate the reel "
+               f"(~1 Higgsfield credit). Final review still required before publish.")
+    elif verb == "REJECT":
+        cqc.unlink(missing_ok=True)
+        e.write_status(job_id, "concept_rejected", reviewed_at=e.now_iso(),
+                       reviewed_by=who, review_note=note or None)
+        msg = (f"🛑 {job_id} concept rejected by {who}" + (f" — {note}" if note else "")
+               + " — NO credit spent (trust unchanged; the spend never happened).")
+    elif verb == "REVISE":
+        cqc.unlink(missing_ok=True)
+        e.write_status(job_id, "concept_revise", reviewed_at=e.now_iso(),
+                       reviewed_by=who, review_note=note or None)
+        msg = (f"✏️ {job_id} concept flagged for revision by {who}" + (f" — {note}" if note else "")
+               + ". Rewrite the script (RV2), then it re-enters the concept gate. No credit spent.")
+    else:  # HOLD
+        e.write_status(job_id, "concept_held", reviewed_at=e.now_iso(), reviewed_by=who,
+                       review_note=note or "concept held")
+        msg = f"⏸ {job_id} concept held by {who} — no credit spent; defers."
+    e.log(msg)
+    if reply:
+        tg.send_text(msg, dry_run=False)
+    return msg
+
+
 # ── apply one command ────────────────────────────────────────────────────────
 def apply_command(verb: str, job_id: str, note: str, who: str = "telegram",
                   reply: bool = True) -> str:
@@ -83,6 +120,11 @@ def apply_command(verb: str, job_id: str, note: str, who: str = "telegram",
         if reply:
             tg.send_text(msg, dry_run=False)
         return msg
+    # F7: route a pre-generation reel's A/R/E to the concept gate (the SAME commands, gated
+    # by status). The final-gate branches below are unchanged for every other job.
+    if (e.read_status(job_id) or {}).get("status") == "awaiting_concept" \
+            and verb in ("APPROVE", "REJECT", "REVISE", "HOLD"):
+        return _apply_concept(verb, job_id, note, who, reply, job_dir)
     qc = job_dir / "qc.json"
 
     if verb == "APPROVE":

@@ -287,14 +287,17 @@ def extract_json(text):
     except json.JSONDecodeError:
         m = re.search(r"\{.*\}", text, re.DOTALL)
         if m:
-            return json.loads(m.group(0))
-        sys.exit(f"ERROR: could not parse model JSON:\n{text[:500]}")
+            return json.loads(m.group(0))      # may raise JSONDecodeError → caller can retry
+        raise ValueError(f"no JSON object in model output:\n{text[:300]}")
 
 
 # ── Compliance enforcement (safety net beyond the prompt) ────────────────────
 
 # Compliance (RED/YELLOW) — single source of truth is compliance.py (Red/Yellow/Green framework).
 from compliance import red_hits, yellow_hits, say_instead, PROMPT_RULES
+# Auto-retry budget when the model emits a RED claim or non-JSON (the publish gate is the hard
+# backstop; this just closes the gap so produced copy is usually clean on the first pass).
+MAX_COMPLIANCE_RETRIES = 2
 ALLOWED_EMOJI = set("🔬🧬📊⚡✓")
 EMOJI_RE = re.compile(
     "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF←-⇿⬀-⯿]"
@@ -534,19 +537,54 @@ def main():
         {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
-    resp = call_openrouter(messages, args.model, api_key)
+    enforce_fn = enforce_carousel if args.carousel else enforce
 
-    if args.raw:
-        print(json.dumps(resp, indent=2, ensure_ascii=False))
-        return
+    # Auto-retry loop: regenerate if the model returns non-JSON OR emits a RED claim, feeding
+    # back the exact violations so the rewrite is compliant. Bounded (the gate is the backstop).
+    result, warnings = None, []
+    for attempt in range(MAX_COMPLIANCE_RETRIES + 1):
+        resp = call_openrouter(messages, args.model, api_key)
+        if args.raw:
+            print(json.dumps(resp, indent=2, ensure_ascii=False))
+            return
+        content = resp["choices"][0]["message"]["content"]
+        try:
+            result = extract_json(content)
+        except (json.JSONDecodeError, ValueError):
+            if attempt >= MAX_COMPLIANCE_RETRIES:
+                sys.exit(f"ERROR: model did not return valid JSON after {attempt+1} tries:\n{content[:400]}")
+            print(f"[copy] non-JSON output (attempt {attempt+1}/{MAX_COMPLIANCE_RETRIES+1}) — retrying", file=sys.stderr)
+            messages += [
+                {"role": "assistant", "content": content},
+                {"role": "user", "content": "Your previous reply was not valid JSON. Reply with ONLY "
+                 "the JSON object specified — no prose, no markdown code fences."},
+            ]
+            continue
 
-    content = resp["choices"][0]["message"]["content"]
-    result = extract_json(content)
-    if args.carousel:
-        result, warnings = enforce_carousel(result, args, brand)
-    else:
-        result, warnings = enforce(result, args, brand)
+        result, warnings = enforce_fn(result, args, brand)
+        reds = [w for w in warnings if w.startswith("RED claim")]
+        if not reds or attempt >= MAX_COMPLIANCE_RETRIES:
+            break
 
+        # RED claim slipped through → regenerate with the exact violations + compliant framing.
+        print(f"[copy] RED claim(s) on attempt {attempt+1}/{MAX_COMPLIANCE_RETRIES+1} — "
+              f"regenerating compliant copy ({len(reds)} hit(s))", file=sys.stderr)
+        messages += [
+            {"role": "assistant", "content": content},
+            {"role": "user", "content":
+                "Your output contained FORBIDDEN red-claim language that violates FDA/Meta policy:\n"
+                + "\n".join(f"- {r}" for r in reds)
+                + "\n\nRewrite the COMPLETE JSON object. Replace EVERY forbidden claim with compliant "
+                  "research-subject framing: attribute any outcome to 'research subjects' / 'study "
+                  "participants' (never the reader/'you'/'your'), hedge with 'research suggests' / "
+                  "'may support' / 'studies indicate', keep it research-use-only, and cite a study where "
+                  "you make a claim. Do NOT use heal/cure/treat/prevent/reverse/'repairs tendons'/boosts/"
+                  "burns/builds or any customer-directed outcome. Output ONLY the corrected JSON."},
+        ]
+
+    if reds := [w for w in warnings if w.startswith("RED claim")]:
+        print(f"[copy] ⚠ {len(reds)} RED claim(s) REMAIN after {MAX_COMPLIANCE_RETRIES} retries — "
+              "human must REVISE (the publish gate will block this).", file=sys.stderr)
     for w in warnings:
         print(f"[copy] WARNING: {w}", file=sys.stderr)
 

@@ -49,6 +49,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import source_bank  # RV0 — full-transcript harvest & angle reuse (0 extraction cost)
+
 WS = Path(__file__).parent.resolve()
 PY = sys.executable or "python3"
 CACHE_DIR = WS / "output" / "research" / "cache"
@@ -417,31 +419,52 @@ def _detect_platform(url):
     return "article"
 
 
-def extract_pattern(url, fresh=False):
-    """Extract a viral post's pattern: apify.py scrape for social URLs (the EXTRACTOR),
-    blotato.py source for articles/anything else. Returns hook + text + format type.
-    Fires the priciest call (apify) at most once per URL thanks to the cache."""
+def bank_source(url, fresh=False):
+    """SINGLE extraction point (RV0). Pull the source's FULL transcript via the `--raw`
+    flag — apify for social URLs, blotato for articles — and bank it under
+    output/research/sources/. apify fires a fresh (paid) actor run per call and does NOT
+    cache by URL, so this `--raw` call is the ONLY scrape we ever make of a source: the
+    structured pattern below is derived locally from the banked transcript, never a 2nd
+    scrape. The 7-day run_tool cache then blocks accidental re-spend on re-runs."""
     platform = _detect_platform(url)
     if platform in ("youtube", "instagram", "tiktok", "facebook"):
-        data = run_tool("apify.py", ["scrape", url], ttl=7 * CACHE_TTL, fresh=fresh)
+        raw = run_tool("apify.py", ["scrape", url, "--raw"], ttl=7 * CACHE_TTL, fresh=fresh)
+    else:
+        raw = run_tool("blotato.py", ["source", url, "--raw"], ttl=7 * CACHE_TTL, fresh=fresh)
+    if not raw:
+        return None
+    return source_bank.upsert(url, platform, raw)
+
+
+def extract_pattern(url, fresh=False):
+    """Extract a viral post's pattern (hook + text + format type) for Mode-B cloning. Reads
+    the banked FULL transcript (bank_source harvests it once) instead of a fresh scrape, so
+    Mode B and the Source Bank share the single paid extraction per URL."""
+    platform = _detect_platform(url)
+    rec = bank_source(url, fresh=fresh)
+    text = (rec.get("full_transcript") or rec.get("caption") or "") if rec else ""
+    caption = (rec.get("caption") or "") if rec else ""
+    if not text:
+        # --raw returned nothing parseable — fall back to the structured scrape ONCE so a
+        # transient empty transcript can't silently abort Mode B (recovery, not routine).
+        if platform in ("youtube", "instagram", "tiktok", "facebook"):
+            data = run_tool("apify.py", ["scrape", url], ttl=7 * CACHE_TTL, fresh=fresh)
+        else:
+            data = run_tool("blotato.py", ["source", url], ttl=7 * CACHE_TTL, fresh=fresh)
         if not data:
             return None
         d = data[0] if isinstance(data, list) else data
         text = (d.get("transcript") or d.get("caption") or d.get("description")
-                or d.get("text") or "")
-        hook = _first_line(text)
-        return {"platform": platform, "url": url, "hook": hook, "text": text[:1500],
-                "caption": (d.get("caption") or d.get("description") or "")[:600],
-                "views": parse_count(d.get("views")), "likes": parse_count(d.get("likes")),
-                "comments": parse_count(d.get("comments_count")),
-                "format_type": classify_format(f"{hook} {text[:400]}")}
-    data = run_tool("blotato.py", ["source", url], ttl=7 * CACHE_TTL, fresh=fresh)
-    if not data:
-        return None
-    text = data.get("transcript") or data.get("content") or ""
+                or d.get("content") or d.get("text") or "")
+        caption = d.get("caption") or d.get("description") or ""
+        if not text:
+            return None
+    eng = (rec.get("engagement") or {}) if rec else {}
     hook = _first_line(text)
-    return {"platform": "article", "url": url, "hook": hook, "text": text[:1500],
-            "caption": "", "views": 0, "likes": 0, "comments": 0,
+    return {"platform": platform, "url": url, "hook": hook, "text": text[:1500],
+            "caption": caption[:600],
+            "views": parse_count(eng.get("views")), "likes": parse_count(eng.get("likes")),
+            "comments": parse_count(eng.get("comments")),
             "format_type": classify_format(f"{hook} {text[:400]}")}
 
 
@@ -654,6 +677,97 @@ def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
     return brief
 
 
+# §3.2 weekly content-mix — which (pillar, weekday) cells are REELS (0=Mon). Encoded from
+# CONTENT_ENGINE_GUIDE §3.2: Science=Wed/Sun, Trending=Mon/Wed/Fri/Sun. This naturally
+# respects the 2-reels/day cap (Wed & Sun = both fire = 2; Mon/Fri = 1). Stack/Proof/Founder
+# are image-format in §3.2, so they default to image briefs.
+WEEKLY_REEL = {"science": {2, 6}, "trending": {0, 2, 4, 6}}
+
+
+def slot_wants_reel(pillar, weekday=None):
+    """True when the §3.2 weekly mix calls for a video reel in this pillar today (the
+    'slot calls for video' trigger the F7 loop consults)."""
+    weekday = datetime.now().weekday() if weekday is None else weekday
+    return weekday in WEEKLY_REEL.get(pillar, set())
+
+
+def assemble_reel_brief(pillar, topic, *, persona=None, brand=None, reference=None,
+                        script=None, job_id=None, dry_run=False, fresh=False):
+    """Produce one type=reel brief.json (RV1). The reel chain fills the rest later:
+    RV2 writes brief.script, RV3 the generated b-roll into brief.video, RV4 caption_data.json.
+    Here we fix the concept — topic/pillar/persona/brand/reference + the branded M5 COVER
+    tokens (story-reel template, same overlay tokens copywriter already emits) — so GATE 1
+    can approve the concept BEFORE any Higgsfield credit."""
+    preset = PILLAR_PRESETS[pillar]
+    persona = persona or preset["persona"]
+    brand = brand or route_brand(topic, pillar)
+    product_feature = preset.get("product_feature", False)
+    compound = _catalog_match(topic)
+    cls = COMPOUND_CATALOG.get(compound, {}).get("cls") if compound else None
+    cover_tpl = "story-reel-light" if brand == "health" else "story-reel-dark"
+
+    job_id = job_id or next_job_id()
+    bn = "ACME HEALTH" if brand == "health" else "ACME LABS"
+    handle = "@acmehealth" if brand == "health" else "@acmelabs"
+    brief = {
+        "job_id": job_id, "type": "reel", "brand": brand, "pillar": pillar,
+        "persona": persona, "topic": topic,
+        # Reels have a fixed video distribution: TikTok + X + YouTube (video-only). IG is
+        # skipped by publish.py until Meta is connected; YouTube takes video only.
+        "platforms": ["tiktok", "x", "youtube"],
+        "caption_data": "caption_data.json",  # authored in RV4 from the TTS word-timings
+    }
+    if compound:
+        brief["compound"] = compound
+        if cls:
+            brief["class"] = cls
+    if product_feature:
+        brief["product_feature"] = True
+    link = product_link(compound, brand)
+    if link:
+        brief["link"] = link
+    if script:
+        brief["script"] = script
+    if reference:
+        brief["reference"] = reference
+
+    if dry_run:
+        log(f"DRY-RUN would assemble REEL {job_id}: {pillar}/{persona}/{brand} "
+            f"[{cover_tpl}] <- {topic[:60]!r}")
+        return brief
+
+    job_dir = JOBS_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    # M2 — fill the branded cover's overlay tokens via copywriter.py (same engine as images).
+    copy_topic = f"{topic}\n{PERSONA_VOICE.get(persona, '')}".strip()
+    cp = run_copy(copy_topic, brand, "instagram", product_feature, compound, cls, fresh=fresh)
+    if not isinstance(cp, dict) or not cp:
+        log(f"copywriter.py failed for {job_id} — cover tokens minimal (re-run copywriter.py later)")
+        cp = {}
+    cover = {"template": f"templates/src/{cover_tpl}.html",
+             **_map_tokens(cover_tpl, cp, brand, compound, product_feature)}
+    # Labs reels: surface RUO in the cover eyebrow (schema convention + §5 QC).
+    if brand == "labs":
+        cover["EYEBROW"] = "RESEARCH USE ONLY"
+    brief["cover"] = cover
+
+    (job_dir / "brief.json").write_text(json.dumps(brief, ensure_ascii=False, indent=2))
+    if cp:
+        (job_dir / "copy.json").write_text(json.dumps(cp, ensure_ascii=False, indent=2))
+    _ref = reference or {}
+    (job_dir / "research.json").write_text(json.dumps(
+        {"job_id": job_id, "discovered_at": now_iso(), "type": "reel", "reference": _ref,
+         "source_url": _ref.get("url"), "source_platform": _ref.get("platform"),
+         "cloned_format": _ref.get("cloned_format")},
+        ensure_ascii=False, indent=2))
+
+    ok, errs = validate_brief(brief)
+    log(f"{'OK ' if ok else 'INVALID '}{job_id} (reel) -> {job_dir}/brief.json"
+        + ("" if ok else f"  errors: {errs}"))
+    return brief
+
+
 def _map_tokens(template, cp, brand, compound, product_feature):
     """Map copywriter.py output -> the exact token names the chosen template needs."""
     bn = cp.get("BRAND_NAME") or ("ACME HEALTH" if brand == "health" else "ACME LABS")
@@ -836,6 +950,7 @@ def cmd_outliers(args):
     log(f"extracting top outlier: {top['url']}")
     _extract_and_brief(top["url"], store, persona="P3", brand="labs", curated=False,
                        outlier_meta=top, carousel=getattr(args, "carousel", None),
+                       as_reel=getattr(args, "reel", False),
                        dry_run=args.dry_run, fresh=args.fresh)
 
 
@@ -845,12 +960,13 @@ def cmd_inbox(args):
     _extract_and_brief(args.url, store, persona=args.persona, brand=args.brand,
                        curated=True, acme_topic=args.topic, pillar=args.pillar,
                        carousel=getattr(args, "carousel", None),
+                       as_reel=getattr(args, "reel", False),
                        dry_run=args.dry_run, fresh=args.fresh)
 
 
 def _extract_and_brief(url, store, *, persona="P3", brand="labs", curated=False,
                        acme_topic=None, pillar="trending", outlier_meta=None,
-                       carousel=None, dry_run=False, fresh=False):
+                       carousel=None, as_reel=False, dry_run=False, fresh=False):
     pattern = extract_pattern(url, fresh=fresh)
     if not pattern:
         log(f"extraction failed for {url}")
@@ -892,20 +1008,28 @@ def _extract_and_brief(url, store, *, persona="P3", brand="labs", curated=False,
     if dry_run:
         log("dry-run: pattern extracted + scored, not assembling brief")
         return
-    prov = {"discovery_mode": "B_outlier"}
     jid = next_job_id()
-    brief = assemble_brief("trending", recon["hook_angle"], persona=persona, brand=brand,
-                           template=recon["template"], carousel=carousel, job_id=jid,
-                           provenance=prov, reference=ref, fresh=fresh)
-    # Keep the brief.topic clean/human (the long copywriter.py angle lives in research.json).
+    if as_reel:
+        # Mode B is video-native: clone the viral structure into a reel concept (RV1). The
+        # cloned format lives in reference.cloned_format; the reel chain (RV2-RV4) fills the rest.
+        brief = assemble_reel_brief("trending", topic, persona=persona, brand=brand,
+                                    job_id=jid, reference=ref, fresh=fresh)
+        fmt_label = "reel"
+    else:
+        brief = assemble_brief("trending", recon["hook_angle"], persona=persona, brand=brand,
+                               template=recon["template"], carousel=carousel, job_id=jid,
+                               provenance={"discovery_mode": "B_outlier"}, reference=ref, fresh=fresh)
+        # Keep the brief.topic clean/human (the long copywriter.py angle lives in research.json).
+        brief_path = JOBS_DIR / jid / "brief.json"
+        bj = json.loads(brief_path.read_text())
+        bj["topic"] = topic
+        brief_path.write_text(json.dumps(bj, ensure_ascii=False, indent=2))
+        fmt_label = pattern["format_type"]
     brief_path = JOBS_DIR / jid / "brief.json"
-    bj = json.loads(brief_path.read_text())
-    bj["topic"] = topic
-    brief_path.write_text(json.dumps(bj, ensure_ascii=False, indent=2))
     store.add_brief(pillar="trending", persona=persona, source_url=url,
-                    format_type=pattern["format_type"], hook_angle=topic,
+                    format_type=("reel" if as_reel else pattern["format_type"]), hook_angle=topic,
                     scoring_breakdown=sc, job_id=jid, brief_path=str(brief_path), reference=ref)
-    log(f"Mode B cloned {pattern['format_type']} format -> {jid} (topic: {topic!r})")
+    log(f"Mode B cloned {fmt_label} -> {jid} (topic: {topic!r})")
 
 
 def _suggest_topic(pattern, persona):
@@ -916,6 +1040,66 @@ def _suggest_topic(pattern, persona):
             return f"{name} {info['descriptor'].lower()}"
     live = [n for n, i in COMPOUND_CATALOG.items() if i.get("live")]
     return f"{live[0]} research" if live else "peptide research"
+
+
+def cmd_bank(args):
+    """Source Bank (RV0): reuse a previously-paid source's banked angles. List the bank, or
+    mine UNUSED angles from one source into briefs at ZERO new extraction cost (only the cheap
+    copywriter call per brief). Reel-format angles are emitted by the F7 reel pipeline (RV1+);
+    here we mine the 0-credit image/carousel/callout angles."""
+    if getattr(args, "list", False) or not args.source:
+        rows = source_bank.all_sources()
+        if not rows:
+            log("no banked sources yet — `research.py inbox|outliers --extract` harvests one")
+            return
+        for r in rows:
+            nu = len(source_bank.unused_angles(r))
+            log(f"{r['source_id']}  {r['platform']:<9} {r['transcript_chars']:>6}c  "
+                f"{nu} unused/{len(r.get('angles', []))} angles  {r['url'][:60]}")
+        return
+
+    rec = source_bank.load(args.source)
+    if not rec:
+        log(f"no banked source for {args.source!r}")
+        return
+    if args.propose or not rec.get("angles"):
+        rec = source_bank.propose_angles(rec, n=args.propose or 6, brand=args.brand)
+
+    store = DiscoveryStore()
+    made = 0
+    for a in source_bank.unused_angles(rec, fmt=args.format):
+        if made >= args.n:
+            break
+        jid = next_job_id()
+        views = (rec.get("engagement") or {}).get("views", 0)
+        ref = build_reference(
+            url=rec["url"], platform=rec["platform"],
+            description=f"Source Bank angle {a['id']} — {rec['platform']} source ({views:,} views)",
+            selection_rationale=(f"Reused banked angle {a['id']} from a previously-paid extraction "
+                                 f"(0 new extraction cost): {a['angle'][:120]}"),
+            cloned_format=a["format"])
+        ref["segment_id"] = a["id"]  # provenance: the exact part of the source this post used
+        if args.dry_run:
+            log(f"DRY-RUN would mine {a['id']} [{a['format']}/{a['pillar']}] -> {jid}: {a['angle'][:60]!r}")
+            made += 1
+            continue
+        if a["format"] == "reel":
+            brief = assemble_reel_brief(a["pillar"], a["angle"], brand=args.brand, job_id=jid,
+                                        reference=ref, fresh=args.fresh)
+        else:
+            template = "static-callout-dark" if a["format"] == "callout" else None
+            carousel = CAROUSEL_DEFAULT_SLIDES if a["format"] == "carousel" else None
+            brief = assemble_brief(a["pillar"], a["angle"], brand=args.brand, template=template,
+                                   carousel=carousel, job_id=jid, reference=ref, fresh=args.fresh,
+                                   provenance={"discovery_mode": "bank_reuse",
+                                               "source_id": rec["source_id"], "angle_id": a["id"]})
+        store.add_brief(pillar=a["pillar"], persona=brief["persona"], source_url=rec["url"],
+                        format_type=a["format"], hook_angle=a["angle"], job_id=jid,
+                        brief_path=str(JOBS_DIR / jid / "brief.json"), reference=ref)
+        source_bank.mark_used(rec, a["id"], jid)
+        made += 1
+        log(f"bank-mined {a['id']} [{a['format']}/{a['pillar']}] -> {jid} (0 extraction cost)")
+    log(f"Source Bank: minted {made} brief(s) from {rec['source_id']}")
 
 
 def main():
@@ -939,6 +1123,7 @@ def main():
     po.add_argument("--carousel", nargs="?", type=int, const=CAROUSEL_DEFAULT_SLIDES, metavar="N",
                     help="Clone the outlier into a full N-slide carousel (better for comparison/"
                          "listicle formats) instead of a single card. Default N=5.")
+    po.add_argument("--reel", action="store_true", help="Clone the outlier into a type=reel concept (F7) instead of an image")
     po.add_argument("--dry-run", action="store_true", help="Extract + score only; no brief")
     po.add_argument("--fresh", action="store_true", help="Bypass the API cache")
     po.set_defaults(func=cmd_outliers)
@@ -951,9 +1136,22 @@ def main():
     pi.add_argument("--topic", help="Override the Acme topic to pour into the cloned format")
     pi.add_argument("--carousel", nargs="?", type=int, const=CAROUSEL_DEFAULT_SLIDES, metavar="N",
                     help="Clone the dropped link into a full N-slide carousel instead of a single card. Default N=5.")
+    pi.add_argument("--reel", action="store_true", help="Clone the dropped link into a type=reel concept (F7) instead of an image")
     pi.add_argument("--dry-run", action="store_true", help="Extract + score only; no brief")
     pi.add_argument("--fresh", action="store_true", help="Bypass the API cache")
     pi.set_defaults(func=cmd_inbox)
+
+    pbk = sub.add_parser("bank", help="Source Bank (RV0): reuse a paid source's banked angles -> briefs (0 extraction cost)")
+    pbk.add_argument("source", nargs="?", help="banked source URL or 16-char id (omit / --list to list the bank)")
+    pbk.add_argument("--list", action="store_true", help="List banked sources + unused-angle counts")
+    pbk.add_argument("--propose", nargs="?", type=int, const=6, metavar="N",
+                     help="(Re)propose N angles before mining (default 6; auto when the bank has none)")
+    pbk.add_argument("--n", type=int, default=1, help="How many unused angles to mine into briefs (default 1)")
+    pbk.add_argument("--format", choices=["reel", "carousel", "callout"], help="Only mine angles of this format (default: any)")
+    pbk.add_argument("--brand", default="labs", choices=["labs", "health"])
+    pbk.add_argument("--dry-run", action="store_true", help="Show what would be mined; write nothing, mark nothing used")
+    pbk.add_argument("--fresh", action="store_true", help="Bypass the API cache")
+    pbk.set_defaults(func=cmd_bank)
 
     pr = sub.add_parser("run", help="Full day: assemble briefs across pillars (topics + outliers)")
     pr.add_argument("--select", type=int, default=4, help="Mode A topics to select (default 4; +1 trending from outliers)")
