@@ -21,7 +21,7 @@
 ## 0. The chain (where this fits)
 
 ```
-M1 brief.json → M2 copy.py → M3 visual(CREDITS) → M4 HyperFrames captions → M5 produce.py → M6 QC
+M1 brief.json → M2 copywriter.py → M3 visual(CREDITS) → M4 HyperFrames captions → M5 produce.py → M6 QC
                                                     └─ this runbook ─────────────┘
 ```
 
@@ -440,7 +440,7 @@ Instagram/Threads/Facebook **Blotato connection** (Operator's manual step — `p
 with a warning until connected); per-post **thread images** on X (`blotato.py --also` is text-only,
 finding P1); **post-status tracking**; **Supabase** `published_posts` (F-series — `publish.py`
 currently records to `<job>/published_posts.json`). ✅ **Done in F1:** `publish.py` runner +
-compliance gate (§11.5), `copy.py` per-platform captions (bug #2 — `x/threads/facebook/linkedin`).
+compliance gate (§11.5), `copywriter.py` per-platform captions (bug #2 — `x/threads/facebook/linkedin`).
 
 ### 11.5 `publish.py` — the one-command publisher (F1)
 
@@ -474,7 +474,7 @@ contract + example: [schemas/examples/ACME-011.captions.json](schemas/examples/A
 
 **`captions.json` shape:** keyed by brief platform-name; each value is a **string** (single post)
 or an **object** `{text, thread[], title}`. X carries its thread in `thread[]` (→ `blotato.py
---also`); YouTube carries `title`. Authored by `copy.py --platform <p>` (one per platform).
+--also`); YouTube carries `title`. Authored by `copywriter.py --platform <p>` (one per platform).
 
 **The compliance gate (hard wall — any fail → exit 1, publish nothing):**
 
@@ -489,7 +489,18 @@ or an **object** `{text, thread[], title}`. X carries its thread in `thread[]` (
 
 **Routing:** X→twitter `18688` · tiktok `43061` · youtube `37252`. Instagram/Threads/Facebook =
 **skipped with a warning** (not connected). YouTube = **skipped for image jobs** (video only, P2).
-X gets the **cover/first image** (single opinion tweet); TikTok/IG get the **full carousel**.
+**X carousel → slide-per-tweet THREAD** (each slide = one tweet, image on each — the guide's
+treatment); a single-image X job posts up to 4 images in one tweet. TikTok/IG get the **full carousel**.
+
+> **✅ RESOLVED 2026-06-18 — X carousel = slide-per-tweet thread (Devon's guide).** Was: cover image
+> only (`media_urls_for` → `all_urls[:1]`, "ACME-011 treatment"), which contradicted the guide
+> (CONTENT_ENGINE_GUIDE §3.4 "each carousel slide → a tweet"; SOUL §6). Now a carousel posts as a
+> THREAD, one tweet per slide with its own image: (1) `produce_daily.build_x_thread` authors
+> `captions.json["x"] = {text, thread[]}` from `slides.json` (hook leads; RUO + COA link on the
+> last tweet; every tweet ≤280 / 0 hashtags), (2) `publish.media_urls_for`/`thread_media_for` put
+> the cover on the lead tweet and slide *i+1* on thread post *i*, (3) `blotato.py --also-media`
+> makes `additionalPosts` carry `{text, mediaUrls}` per post (was text-only — the old F1 gap).
+> Proven on ACME-018 (Epithalon) + ACME-019 (BPC-157). Non-carousel X posts are unchanged.
 
 **Records:** successful `--go` runs append to `<job>/published_posts.json` (Supabase is F-series).
 Uploaded URLs cache to `<job>/uploaded_urls.json` so re-runs don't re-upload (`--reupload` forces).
@@ -531,7 +542,7 @@ keep it, or add `-an` to strip.)
 ## 13. Research recipe (F3) — `research.py`, the brief producer (built 2026-06-18)
 
 The front-end that **replaces manual topic-feeding**: it produces `brief.json` files, which then
-flow into the proven core (`copy.py` → `post.py`/`reel.py`). **0 Higgsfield credits.** Two modes.
+flow into the proven core (`copywriter.py` → `post.py`/`reel.py`). **0 Higgsfield credits.** Two modes.
 Every paid API call is cached under `output/research/cache/` (24h; apify 7d) so re-runs don't
 re-spend — apify is the priciest call, so Mode B fires it once per URL.
 
@@ -563,7 +574,7 @@ python3 research.py inbox "<url>" --topic "BPC-157 tendon repair research"   # f
 ```
 Outlier = **view-velocity (views/age) ≥ 2× the result-set median** — surfaces fresh high-velocity
 posts over old high-view ones. Extract → classify the **format archetype** (this-or-that, myth-bust,
-list, study-reaction…) → **reconfigure**: pour an Acme-owned topic into that structure, `copy.py`
+list, study-reaction…) → **reconfigure**: pour an Acme-owned topic into that structure, `copywriter.py`
 rewrites the hook in the Research-Pharmacist voice + enforces compliance. **Clone the FORMAT, never
 the content** — the source's claims are never carried into the brief (kept in `research.json` for
 reference only). Scored by Devon's Mode B weights (niche/persona/format-adaptability/buyer-intent /40
@@ -579,13 +590,13 @@ against `schemas/brief.schema.json`), **`copy.json`** (caption/hashtags/alt for 
 `output/research/<date>/{discovery_queue,daily_brief}.json` (local-JSON-first; a Supabase `db.py`
 replaces `DiscoveryStore` additively at cutover). Then: `python3 post.py output/jobs/ACME-NNN` → PNG
 → **M6 visual QC** (§9.3). Add `--fresh` to any command to bypass the cache; `--dry-run` to score
-without spending on copy.py or writing briefs.
+without spending on copywriter.py or writing briefs.
 
 **Reference provenance (in every brief).** Each `brief.json` carries a **`reference`** block — the
 exact source that inspired the post + *why* it was picked: `{ url, platform, description,
 selection_rationale, cloned_format, extracted_hook, scoring_breakdown }` (Mode A carries no `url`;
 mirrored to the `daily_brief` row as `reference_url`/`reference_description`/`selection_rationale`).
-It is **metadata only** — `copy.py` never sees it, so the source's hook/claims **cannot leak into
+It is **metadata only** — `copywriter.py` never sees it, so the source's hook/claims **cannot leak into
 the caption** (verified: the ACME-017 source claim "tortures belly fat" stayed in `extracted_hook`,
 absent from the Epithalon caption). **F2** surfaces it at approval (*"📎 Reference: <description> —
 <url>"*); the **F1** publish gate will assert it never appears in a post (next-step, MIGRATION Part 2).
@@ -596,11 +607,11 @@ python3 research.py topics --candidates "BPC-157" --carousel 5    # 5-slide deck
 python3 research.py run --carousel                                # Mode-A (Science/Stack) briefs as carousels
 ```
 Carousels are the backbone of **Science Simplified + Stack of the Day** — the save-rate pillars.
-With `--carousel N` (or any `carousel-*` template), `assemble_brief` calls **`copy.py --carousel N`**
+With `--carousel N` (or any `carousel-*` template), `assemble_brief` calls **`copywriter.py --carousel N`**
 (Devon's Stage-3 slide copy: each slide = `EYEBROW + HEAD_1/HEAD_2_ITALIC/HEAD_3 + BODY`, slide 1 =
 hook, **final slide carries the RUO line for Labs**), writes **`slides.json`** into the job folder,
 and the brief points `post.py` at it → one brand-correct PNG per slide (1080×1350). Proven on
-**ACME-015** (BPC-157, 5 slides, M6 QC pass). `copy.py --carousel` is backward-compatible (new flag;
+**ACME-015** (BPC-157, 5 slides, M6 QC pass). `copywriter.py --carousel` is backward-compatible (new flag;
 single-card behaviour unchanged).
 
 > ⚠️ **Gotchas:** (1) per-follower normalization isn't possible — searchapi/apify don't expose the
@@ -619,13 +630,13 @@ publish on approval**. A scheduler *without* an approval gate would auto-publish
 does NOT want — so F4 (scheduling) and F2 (Telegram approval) ship together. **Carousels + static
 cards only; video reels are EXCLUDED** (they cost Higgsfield credits + need hand-authored caption
 beats). **0 Higgsfield credits.** Pure-Python launchd (no `claude -p`); the only LLM cost is
-`copy.py` (OpenRouter, pennies). Shared core: **`engine.py`**.
+`copywriter.py` (OpenRouter, pennies). Shared core: **`engine.py`**.
 
 ### 14.1 The three steps
 
 ```
 A) produce_daily.py run --carousel     research.py run --carousel → post.py render → captions.json
-                                       (THE BRIDGE: copy.py --platform x|tiktok|instagram, RUO on
+                                       (THE BRIDGE: copywriter.py --platform x|tiktok|instagram, RUO on
                                         every Labs caption, X fit ≤280/0-hashtags) → slots + manifest
 B) telegram.py push-day                sendMediaGroup + review card → DEDICATED engine group
    approvals.py poll                   getUpdates → APPROVE writes qc.json {"passed":true} + status
@@ -634,7 +645,7 @@ C) publish_slot.py                     drain approvals → this slot's APPROVED 
 
 **Why the bridge exists:** `research.py` writes `copy.json` (one caption); `publish.py`'s gate needs
 `captions.json` (one UNIQUE caption per platform) **and the RUO line on EVERY Labs caption** — but
-`copy.py` only auto-appends RUO for `--product-feature` posts. `produce_daily.py` closes that gap so
+`copywriter.py` only auto-appends RUO for `--product-feature` posts. `produce_daily.py` closes that gap so
 produced jobs pass the publish gate verbatim. The human's APPROVE in Telegram **writes the `qc.json`
 sign-off** that `publish.py` requires — i.e. Telegram review REPLACES the M6 visual-QC step.
 

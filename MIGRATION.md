@@ -20,7 +20,7 @@ Findings from a full review of the workspace + OpenClaw orchestrator:
 | Trust-score system is dead code | `engine_state.json` → `trust_score: 0`, `last_updated: ""`. No script implements §15/§16 events. |
 | Orchestrator model too weak for multi-step | Acme agent = `gemini-2.5-flash` carrying ~86KB auto-injected context/turn. Git history is a string of guardrail patches ("Harden DTC routing", "Add explicit routing", …) compensating for missed routing. |
 | Multi-step chains fail under OpenClaw | Image→template composites and video→subtitles→overlay chains are exactly where the flash agent breaks. |
-| Engine code is NOT in git | `produce.py`, `render.py`, `copy.py`, `sheetlog.py`, `poll_video.py`, `templates/`, `skills/` all untracked. Only .md files committed. |
+| Engine code is NOT in git | `produce.py`, `render.py`, `copywriter.py`, `sheetlog.py`, `poll_video.py`, `templates/`, `skills/` all untracked. Only .md files committed. |
 | Doc contradiction injected every turn | `TOOLS.md` still documents the old 11-col `A:K append` sheet schema; `SOUL.md` §17b mandates 12-col `A:L insert`. Live sheet verified 12-col. |
 | Pipeline scripts themselves are solid | produce/render/copy/sheetlog reviewed line-by-line; all skill binaries are PATH wrappers exec'ing workspace scripts (no drift). They run standalone — **no OpenClaw dependency**. |
 
@@ -28,12 +28,12 @@ Findings from a full review of the workspace + OpenClaw orchestrator:
 
 Known bugs to fix during the relevant phases (none are urgent):
 
-1. ✅ **FIXED (Phase A4).** `poll_video.py` didn't pass `--prompt` to produce.py → Content Matrix col F got the local mp4 path instead of the generation prompt (which sat unused in `job["params"]["prompt"]`). Fix: extract the prompt from the completed job (`params.prompt`, verified against a real `generate list --json`; same lookup chain as `copy.py`) and pass it as `--prompt`. Backward-compatible (no prompt found → unchanged behavior; PENDING/FAILED/DONE contract + cron self-cleanup untouched; `--no-log` deliberately NOT added — it's the live-post path). Argv construction tested in isolation (`tests/test_poll_video.py`, no live-sheet write).
-2. ✅ **FIXED (F1).** `copy.py --platform` lacked `x` / `threads` / `facebook` / `linkedin` (SOUL §6 requires a unique caption per platform). Fix: added all four (plus a `PLATFORM_SHAPES` map injected into the prompt so each channel gets the right shape — X ≤280/0-hashtags, etc.; `x` aliases `twitter`). Backward-compatible — the existing 4 platforms and the output JSON keys are unchanged.
+1. ✅ **FIXED (Phase A4).** `poll_video.py` didn't pass `--prompt` to produce.py → Content Matrix col F got the local mp4 path instead of the generation prompt (which sat unused in `job["params"]["prompt"]`). Fix: extract the prompt from the completed job (`params.prompt`, verified against a real `generate list --json`; same lookup chain as `copywriter.py`) and pass it as `--prompt`. Backward-compatible (no prompt found → unchanged behavior; PENDING/FAILED/DONE contract + cron self-cleanup untouched; `--no-log` deliberately NOT added — it's the live-post path). Argv construction tested in isolation (`tests/test_poll_video.py`, no live-sheet write).
+2. ✅ **FIXED (F1).** `copywriter.py --platform` lacked `x` / `threads` / `facebook` / `linkedin` (SOUL §6 requires a unique caption per platform). Fix: added all four (plus a `PLATFORM_SHAPES` map injected into the prompt so each channel gets the right shape — X ≤280/0-hashtags, etc.; `x` aliases `twitter`). Backward-compatible — the existing 4 platforms and the output JSON keys are unchanged.
 3. `produce.py --model` help text says default `flux_1_1_pro`; actual default is `gpt_image_2`. Cosmetic.
 4. Decoy templates `story-reel.html` / `story-reel-preview.html` still in `templates/src/` ("do NOT use" per MEMORY.md). Archive in Phase A0.
 5. `render.py` fetches Google Fonts from network at render time; `hyperframes-captions/fonts/` shows the embedded-font pattern to copy. Optional.
-6. `copy.py` banned-claims regex misses "treatment / prevention / heals" variants. Optional hardening.
+6. `copywriter.py` banned-claims regex misses "treatment / prevention / heals" variants. Optional hardening.
 7. Junk in repo root: stray `Sheet1!A1` file (accidental shell redirect), `overlay_preview_v2–7.jpg`, test mp4s. Clean in Phase A0.
 
 ---
@@ -44,7 +44,7 @@ Known bugs to fix during the relevant phases (none are urgent):
 
 **Decision (2026-06-11, Marvin):** adopt the strategy layer of Devon's guide wholesale. It is strong and stack-agnostic. We map it onto the existing Acme production core (Higgsfield → HyperFrames → produce.py) rather than onto Devon's proposed tools — see the reconciliation in Part 5 for what is rejected and why. This section is the *what/why*; Part 1 is the *how*. The North-Star goal is Devon's: **100K organic followers across Instagram + TikTok in 6 months via a self-improving engine posting 5×/day.**
 
-**Scope (2026-06-16, Marvin):** run it **dual-brand on a combined account**, exactly as Devon's guide specifies — Labs and Health both. Brand-per-post routing stays (`copy.py --brand labs|health`): Labs = research/education content, organic only, RUO framing; Health = protocol/metabolic/results content, may run paid. Labs supplies credibility, Health carries the protocol/results pillars. (Labs-only was considered and rejected: RUO bars human-use content, which would gut the Stack-of-the-Day and Social-Proof pillars.)
+**Scope (2026-06-16, Marvin):** run it **dual-brand on a combined account**, exactly as Devon's guide specifies — Labs and Health both. Brand-per-post routing stays (`copywriter.py --brand labs|health`): Labs = research/education content, organic only, RUO framing; Health = protocol/metabolic/results content, may run paid. Labs supplies credibility, Health carries the protocol/results pillars. (Labs-only was considered and rejected: RUO bars human-use content, which would gut the Stack-of-the-Day and Social-Proof pillars.)
 
 **Physician/medical-claim policy (2026-06-16, Marvin) — legally conservative:** the engine will **never cite, name, or imply a physician acting for Acme**, and never present medical validation as Acme's own. Social Proof and any "physician/expert" angle is satisfied **only by third-party published research framed as external** ("a 2024 study found…", "researchers report…") — never "our doctor" / "Acme's physician" / "our medical team." This removes the only remaining Devon dependency entirely (see Part 5.1).
 
@@ -91,7 +91,7 @@ Pillar definitions, sample hooks, and format menus are taken verbatim from Devon
 | Threads | Social Proof + Founder POV only; short punchy repurpose of IG caption | 🔧 connect in Blotato (easy — Marvin) |
 | Facebook | Optional extra reach if wanted | 🔧 connect in Blotato (easy — Marvin) |
 
-IG / Threads / FB are a simple Blotato account connection Marvin owns — **not** an external Meta-review blocker. `copy.py` gains `--platform threads` and `--platform x` variants; per-platform caption generation is a hard requirement (never the same text verbatim).
+IG / Threads / FB are a simple Blotato account connection Marvin owns — **not** an external Meta-review blocker. `copywriter.py` gains `--platform threads` and `--platform x` variants; per-platform caption generation is a hard requirement (never the same text verbatim).
 
 ### 1A.5 Compliance — Devon's rules consolidated (ALIGNS with SOUL.md, no conflict)
 
@@ -122,7 +122,7 @@ Devon's Stage 8 is real but oversold. Implement it as an extension of the patter
 ### 1.1 Module chain
 
 ```
-M1 brief.json ──► M2 copy.py ──► M3 visual ──► M4 HyperFrames ──► M5 produce.py ──► M6 QC gate
+M1 brief.json ──► M2 copywriter.py ──► M3 visual ──► M4 HyperFrames ──► M5 produce.py ──► M6 QC gate
    (manual input)    (free)        (CREDITS,      captions          overlay/thumb      (free)
                                     gated)         (free, video)     (free)
                                       │
@@ -158,7 +158,7 @@ Each module reads/writes one job folder: `output/jobs/ACME-NNN/`. Modules are in
 
 `pillar` + `persona` are **required** (Part 1A) — they drive voice, hook style, and template choice. A pillar implies a default template + slot, so a brief can be as small as `{type, brand, pillar, persona, topic}` and the preset fills the rest.
 
-**M2 — Copy.** `copy.py "<topic>" --brand … > jobs/ACME-NNN/copy.json` — overlay tokens + caption + hashtags + alt text, compliance-enforced. Cost: OpenRouter pennies.
+**M2 — Copy.** `copywriter.py "<topic>" --brand … > jobs/ACME-NNN/copy.json` — overlay tokens + caption + hashtags + alt text, compliance-enforced. Cost: OpenRouter pennies.
 
 **M3 — Visual (THE ONLY CREDIT SPEND), preflight-gated.** Hard gate before any submit, all must pass:
 
@@ -214,12 +214,84 @@ These build on the Content Generation Module's job-folder output. None are start
 
 | # | Module | What it is | Effort | Notes |
 |---|---|---|---|---|
-| F1 | **Publishing (Blotato)** ✅ built | Per-job: `publish.py` from the M6 package, per-platform captions, hard compliance gate, record `published_posts` | 🟡 Medium | **BUILT 2026-06-17** (0 credits). Flow first PROVEN on ACME-011 (→ X live + TikTok scheduled, Operator signed off) via a supervised semi-manual run, then **wrapped into `publish.py`** — one command, **dry-run by default** (`--go` to post), with a hard **compliance gate** (QC-pass flag · RUO on all Labs posts · Labs organic-only · banned-claims scan · media exists+aspect · X ≤280/0-hashtags) that runs in both modes. `copy.py` **bug #2 fixed** (per-platform captions: x/threads/facebook/linkedin). `blotato.py` bridge from F1 prototyping: `upload` (presigned PUT), `scheduleTime`→`scheduledTime`, post-status arg. Findings (RUNBOOK §11): **X threads DO chain** (follow-ups need per-post mediaUrls — `--also` is text-only, an enhancement); **YouTube = video only**; no first-comment field (hashtags in caption); can't delete a published post. **Still to build:** Instagram/Threads/FB Blotato connection (Operator's manual step — `publish.py` skips them with a warning); per-post thread images on X; post-status tracking; `published_posts` → **Supabase** (now logged to `<job>/published_posts.json`). |
+| F1 | **Publishing (Blotato)** ✅ built | Per-job: `publish.py` from the M6 package, per-platform captions, hard compliance gate, record `published_posts` | 🟡 Medium | **BUILT 2026-06-17** (0 credits). Flow first PROVEN on ACME-011 (→ X live + TikTok scheduled, Operator signed off) via a supervised semi-manual run, then **wrapped into `publish.py`** — one command, **dry-run by default** (`--go` to post), with a hard **compliance gate** (QC-pass flag · RUO on all Labs posts · Labs organic-only · banned-claims scan · media exists+aspect · X ≤280/0-hashtags) that runs in both modes. `copywriter.py` **bug #2 fixed** (per-platform captions: x/threads/facebook/linkedin). `blotato.py` bridge from F1 prototyping: `upload` (presigned PUT), `scheduleTime`→`scheduledTime`, post-status arg. Findings (RUNBOOK §11): **X threads DO chain** (follow-ups need per-post mediaUrls — `--also` is text-only, an enhancement); **YouTube = video only**; no first-comment field (hashtags in caption); can't delete a published post. **Still to build:** Instagram/Threads/FB Blotato connection (Operator's manual step — `publish.py` skips them with a warning); per-post thread images on X; post-status tracking; `published_posts` → **Supabase** (now logged to `<job>/published_posts.json`). |
 | F2 | **Telegram review layer** ✅ built | `telegram.py` (`sendMediaGroup` + a review card) pushes each M6 package to a **DEDICATED** engine bot + private group (`ENGINE_TELEGRAM_BOT_TOKEN`/`ENGINE_TELEGRAM_CHAT_ID` — **separate from OpenClaw's FROZEN bot, never reused**); `approvals.py` parses `APPROVE/REJECT/REVISE/HOLD ACME-NNN` via `getUpdates` (idempotent offset) → **APPROVE writes `qc.json {"passed":true}`** (the M6 sign-off `publish.py` requires) + per-job `status.json` + note; `engine.py` applies §16 trust events to `engine_state.json` (no separate `trust.py`). | 🟡 Medium | **BUILT 2026-06-18** with F4 (0 credits). The human's eyes in Telegram REPLACE the M6 visual-QC step. Status/notes are local `status.json` (Supabase additive later). Recipe: PIPELINE_RUNBOOK §14. |
-| F3 | **Research module** ✅ built | Manual-topic replacement: `research.py`, two modes, **0 Higgsfield credits**. **Mode A (topics)** — searchapi sweep (trends+news, cached) → the six SOUL §8 factors × `engine_state.topic_weights`, respects `blocked_topics`, prints a per-topic breakdown → top N. **Mode B (outliers/inbox)** — auto-mine YouTube by **view-velocity vs set median** + a **drop-a-link inbox** (any URL via `apify scrape`/`blotato source`) → extract pattern → **reconfigure** (clone the FORMAT, strip the claims, copy.py rewrites the hook in Research-Pharmacist voice + compliance) → Trending brief. Both → 1A.2 pillar presets (pillar→template+persona) + brand routing (labs RUO / health) → validated `brief.json` (+ `copy.json` + `research.json` provenance) → logged to `discovery_queue` + `daily_brief`. | 🟡🔴 Medium-Hard | **BUILT 2026-06-18** (0 credits). Decisions (Marvin): **local-JSON-first** (rows under `output/research/<date>/` via a storage-agnostic `DiscoveryStore`; Supabase `db.py` plugs in additively later) · **personas P1/P2/P3** (voice carried into copy.py; detail in `CONTENT_ENGINE_GUIDE §1`) · **auto-mine YouTube only**, TikTok/Reddit/IG/FB via drop-a-link (apify is priciest → fired once/URL, cached 7d). PROVEN both chains on one real run each: **ACME-013** (Mode A: Semaglutide 0.686 → stack/labs static-compound → rendered) + **ACME-014** (Mode B: 124.6× YouTube outlier → cloned `this_or_that` → Epithalon trending/labs story-reel → rendered), both brand-correct PNGs via `post.py`. **Deferred:** Supabase `db.py`; per-follower outlier normalization (needs a follower field apify doesn't expose — view-velocity used instead); carousel `slides.json` copy-gen (single-card fallback for now); auto TikTok/Reddit mining. Recipe: `PIPELINE_RUNBOOK.md §13`. |
-| F4 | **Scheduling** ✅ built | **pure-Python launchd** (NOT headless `claude -p` — Marvin's call 2026-06-18: the only LLM cost stays `copy.py`, zero agent tokens): 4 jobs in `launchd/` — `produce` 05:30 → `review` 07:00 → `approvals` poll every 5m → `publish` at 08:00/11:00/13:00/16:00/19:00 PT (each slot publishes its own approved jobs). `install.sh` (un)loads them; permissions allowlist in `.claude/settings.json`. | 🟢 Easy (after F1–F3) | **BUILT 2026-06-18** (0 credits). Orchestrators: `produce_daily.py` (the `copy.json`→`captions.json` **bridge** + RUO on every Labs caption + X-fit) · `publish_slot.py` (slot inference, never double-posts, SOUL §19). **Supervised**: publish stays dry-run until `output/GO_LIVE`; `output/STOP` kill-switch; per-day caps (copy 30 / searchapi 20 / apify 3). 23:00 measure + Mon analytics are F5-era. Cloud `/schedule` unsuitable (local creds). Recipe: PIPELINE_RUNBOOK §14. |
+| F3 | **Research module** ✅ built | Manual-topic replacement: `research.py`, two modes, **0 Higgsfield credits**. **Mode A (topics)** — searchapi sweep (trends+news, cached) → the six SOUL §8 factors × `engine_state.topic_weights`, respects `blocked_topics`, prints a per-topic breakdown → top N. **Mode B (outliers/inbox)** — auto-mine YouTube by **view-velocity vs set median** + a **drop-a-link inbox** (any URL via `apify scrape`/`blotato source`) → extract pattern → **reconfigure** (clone the FORMAT, strip the claims, copywriter.py rewrites the hook in Research-Pharmacist voice + compliance) → Trending brief. Both → 1A.2 pillar presets (pillar→template+persona) + brand routing (labs RUO / health) → validated `brief.json` (+ `copy.json` + `research.json` provenance) → logged to `discovery_queue` + `daily_brief`. | 🟡🔴 Medium-Hard | **BUILT 2026-06-18** (0 credits). Decisions (Marvin): **local-JSON-first** (rows under `output/research/<date>/` via a storage-agnostic `DiscoveryStore`; Supabase `db.py` plugs in additively later) · **personas P1/P2/P3** (voice carried into copywriter.py; detail in `CONTENT_ENGINE_GUIDE §1`) · **auto-mine YouTube only**, TikTok/Reddit/IG/FB via drop-a-link (apify is priciest → fired once/URL, cached 7d). PROVEN both chains on one real run each: **ACME-013** (Mode A: Semaglutide 0.686 → stack/labs static-compound → rendered) + **ACME-014** (Mode B: 124.6× YouTube outlier → cloned `this_or_that` → Epithalon trending/labs story-reel → rendered), both brand-correct PNGs via `post.py`. **Deferred:** Supabase `db.py`; per-follower outlier normalization (needs a follower field apify doesn't expose — view-velocity used instead); carousel `slides.json` copy-gen (single-card fallback for now); auto TikTok/Reddit mining. Recipe: `PIPELINE_RUNBOOK.md §13`. |
+| F4 | **Scheduling** ✅ built | **pure-Python launchd** (NOT headless `claude -p` — Marvin's call 2026-06-18: the only LLM cost stays `copywriter.py`, zero agent tokens): 4 jobs in `launchd/` — `produce` 05:30 → `review` 07:00 → `approvals` poll every 5m → `publish` at 08:00/11:00/13:00/16:00/19:00 PT (each slot publishes its own approved jobs). `install.sh` (un)loads them; permissions allowlist in `.claude/settings.json`. | 🟢 Easy (after F1–F3) | **BUILT 2026-06-18** (0 credits). Orchestrators: `produce_daily.py` (the `copy.json`→`captions.json` **bridge** + RUO on every Labs caption + X-fit) · `publish_slot.py` (slot inference, never double-posts, SOUL §19). **Supervised**: publish stays dry-run until `output/GO_LIVE`; `output/STOP` kill-switch; per-day caps (copy 30 / searchapi 20 / apify 3). 23:00 measure + Mon analytics are F5-era. Cloud `/schedule` unsuitable (local creds). Recipe: PIPELINE_RUNBOOK §14. |
 | F5 | **Feedback loop (lite)** | Weekly weighted-scoring updater (Part 1A.6): reads `performance_data` → nudges pillar weights / format prefs / topic boosts / hook patterns / persona weighting in the `content_strategy_config` table (Supabase); Monday Telegram report | 🟡 Medium | Adopted from Devon's Stage 8 but de-scoped from "intelligence layer" to a weights updater. Needs months of data to matter. |
 | F6 | **Parallel run + cutover** | 2–3 days dry-run (publish disabled) → 1 supervised live day → decommission (Part 4); drop the Sheet, keep only Supabase | 🟢 Easy, time-gated | OpenClaw stays fully operational until this point. The single switching moment. |
+| F7 | **Autonomous reel (video) pipeline** | Extends Part 1 (`reel.py`) + F3 (research) + F4 (loop) so the engine RESEARCHES → SCRIPTS → generates → captions → posts **video reels**, not only images. The **only credit-bearing autonomous path** (Higgsfield) → concept is approved **before** any spend. | 🔴 Hard | **PLANNED — see "Planned module F7" below.** Reuses existing machinery (`higgsfield.py video`, `preflight.py`, `reel.py`, Whisper); net-new = script-gen + auto beat-grouping + reel-brief wiring. Sequence after the image loop is proven live; independent of F5. |
+
+### Planned module F7 (2026-06-18, Marvin) — **autonomous reel (video) pipeline**
+
+**Why:** Devon's weekly mix (CONTENT_ENGINE_GUIDE §3.2) is **reel-heavy** — Trending Hook is mostly
+reels; Science + Founder run reels weekly. But the 0-credit auto-loop (F4) makes only images/
+carousels (`produce_daily.py` skips `type=reel`). Video *production* already works **manually**
+(`reel.py`, proven on ACME-007/012) — it just isn't autonomous. F7 wires it, reusing every existing
+tool; the only **net-new generation** is the spoken script + auto beat-grouping.
+
+**Reuses (already built):** `research.py` (F3 — discovery is universal; **Mode B is already
+video-native**: it scrapes a viral video → transcript + hook + structure + format) · Whisper
+(`hyperframes transcribe`) · `higgsfield.py video` (seedance/kling + the verbatim brand VIDEO block)
+· `poll_video.py` · `preflight.py` (the credit gate) · `reel.py` (caption-beats → `captioned.mp4` +
+cover) · `publish.py` (already video-capable; YouTube = video-only).
+
+**Chain (follows Devon stages 1→6 + the credit-first ordering, MIGRATION 1.1):**
+- **RV1 · research → reel brief.** `research.py` emits a `type=reel` brief when the slot/weekly-mix
+  calls for video (Devon §3.2). Mode B (outlier mining) is the natural source — it already clones a
+  viral video's format. Brief carries topic/pillar/persona/brand/`reference` + the format recipe.
+- **RV2 · script (NET-NEW).** A new `copywriter.py --kind script` (or `script.py`): researched angle
+  + format recipe → a **15–45s spoken script, hook in the first 2s**, hook→build→payoff→CTA
+  (VIRAL_FRAMEWORK retention structure), Research-Pharmacist voice + compliance (same engine as
+  captions). Writes `brief.script`.
+- **GATE 1 · concept approval BEFORE any credit.** TG card shows script + concept + `reference`;
+  Marvin APPROVEs the *concept*. **No Higgsfield credit is spent on a rejected concept** (Devon
+  stage 4→5; MIGRATION 1.1). This is the whole reason reels are concept-first.
+- **RV3 · video prompt + gated generation (CREDITS).** Build the Higgsfield VIDEO prompt = brand
+  VIDEO block **verbatim** (SOUL) + a **Seedance b-roll scene — NO face** (Marvin 2026-06-18; matches
+  "Founder POV, no face"; no avatar/Soul/DTC route), **no on-screen text in the prompt** (burned in
+  later). `preflight.py` → `higgsfield.py video --model seedance_2_0` (9:16) → `poll_video.py`.
+  Governed by a **hard cap of 2 reels/day (1 typical)** in `engine.py` (Marvin 2026-06-18). Devon gives
+  no explicit number, but his weekly mix (§3.2) works out to ~1–2 reels/day (Trending is a reel most
+  days; Science adds a 2nd only Wed/Sun) — so 2/day is the ceiling. All other posts stay 0-credit.
+- **RV4 · captions (reuse + NET-NEW beat-grouping).** Whisper transcribe → reconcile against
+  `brief.script` (the schema's `script` field exists for exactly this) → **auto beat-group** (new
+  LLM step: 3–5 words/beat, ≤2 lines, `UNIFORM_CREAM`, PIPELINE_RUNBOOK §2 rules) → `caption_data.json`
+  → `reel.py` renders `captioned.mp4` + cover.
+- **GATE 2 · final review.** TG card with the finished reel → Marvin APPROVEs → publish.
+- **RV5 · publish.** `publish.py` (already video-capable) → TikTok + X (+ YouTube video-only).
+
+**Governance:** reels are the ONLY autonomous credit spend → (a) concept-approved before generation,
+(b) **hard 2 reels/day cap** in `engine.py`, (c) `preflight.py` unchanged, (d) **two** approval gates
+(concept + final) vs one for free images. `STOP` / compliance-hold apply as everywhere.
+
+### Planned sub-system (2026-06-18, Marvin) — **Source Bank: transcript harvest & reuse** (F3 + F7)
+
+**Why (Marvin):** one expensive extraction on a long source — a 1-hour interview/podcast, long
+YouTube — contains **far more than one post's worth** of material. Today Mode B scrapes a source, uses
+a sliver, and discards the rest (and `apify.py`/`blotato.py` even truncate the transcript to ~4k/3k
+chars). Bank the **full** extraction once, then mine it many times at **0 extraction cost** — this is
+the main credit-saver for long-format sources, and it feeds BOTH carousels/images (F3) and reels (F7).
+
+**Design:**
+- **Extract once → bank.** When `research.py` mines/drops a source it pulls the **full** transcript via
+  `apify scrape --raw` / `blotato source --raw` (not the truncated default) and stores it in a source
+  bank: `output/research/sources/<sha-url>.json` = `{ url, platform, scraped_at, full_transcript,
+  caption, engagement, reference, angles:[] }`. (Local-JSON now; a Supabase `sources` table later — same
+  additive path as `DiscoveryStore`.)
+- **Propose angles.** A `copywriter.py` pass reads the transcript and proposes **N distinct content
+  seeds** — each `{ angle, pillar, format (carousel|reel|callout), used:false }` — appended to `angles`.
+  One scrape → a backlog of briefs.
+- **Spend once, reuse N times.** Each brief is built from ONE unused angle, which is marked
+  `used:true` + tagged with its `job_id`. Later runs (`research.py bank`) pull unused angles → new
+  briefs with **zero extraction spend** (only the cheap copywriter call). A source is re-scraped only
+  when stale (TTL) or exhausted; the existing apify 7-day cache already blocks accidental re-spend.
+- **Provenance.** The `reference` block already carries the source `url`; add a segment/angle id so
+  every produced post traces back to the **exact part** of the source it used.
+
+**Open question for Marvin (before build):** keep beat-grouping **auto** from day one, or
+**human-author the caption beats** for the first weeks (safer, semi-manual) while everything else runs
+autonomously?
 
 ### Planned enhancement (2026-06-18, Marvin) — **reference provenance** (spans F3 → F2 → F1)
 
@@ -234,17 +306,19 @@ reviewable, surface it at approval time, and **never leak it into the published 
   `selection_rationale` + signals, **no `url`**. Added an optional `reference` property to
   `brief.schema.json` (additive, backward-compatible). Proven: ACME-016 (Mode A) + ACME-017 (Mode B)
   carry it; the source claim *"tortures belly fat"* stayed in `extracted_hook` and was **absent from
-  the caption** (copy.py never sees the reference). `daily_brief` mirrors it as
+  the caption** (copywriter.py never sees the reference). `daily_brief` mirrors it as
   `reference_url`/`reference_description`/`selection_rationale`.
 - **Supabase** (still TODO) — when `db.py` lands, add `reference_url`, `reference_description`,
   `selection_rationale` (or a single JSONB `reference`) to `daily_brief`; propagate to `content_drafts`.
   The local `daily_brief.json` already carries these columns.
-- **F2 (Telegram review)** (still TODO) — the approval card appends **`📎 Reference: <description> —
-  <url>`** so the reviewer can open the exact source video before approving. (Adds a requirement to
-  the F2 row — read `brief.reference`.)
+- **F2 (Telegram review)** — ✅ **DONE 2026-06-18.** `telegram.py build_card` reads `brief.reference`
+  (fallback `research.json`) and appends **`📎 Reference: <description>`** + the reviewable URL for
+  Mode B, or **`📎 Why: <selection_rationale>`** for Mode A (no source video). `research.py` also
+  mirrors `source_url`/`source_platform`/`cloned_format` flat into `research.json` for legacy readers.
+  (Old/pre-reference jobs like ACME-015 show no URL — correct, they predate the block + are Mode A.)
 - **F1 (publish)** (still TODO) — the reference is **metadata only**; add a hard assertion to the
   publish compliance gate that no `reference_*` text appears in the caption. (Already true by
-  construction — copy.py never receives the reference — but the gate should enforce it explicitly.)
+  construction — copywriter.py never receives the reference — but the gate should enforce it explicitly.)
 
 > Sequencing: the **F3-producer half is done**; the **Supabase columns + F2 surfacing + F1 publish
 > guard** land with F2/F1 work, after F4 (in flight in a parallel session).
@@ -287,7 +361,7 @@ What improves vs OpenClaw: Claude orchestrator (multi-step chains actually work;
 - `SOUL.md`, `TOOLS.md`, `AGENTS.md`, `IDENTITY.md`, `USER.md`, `HEARTBEAT.md`, `MEMORY.md` (workspace) — no edits
 - `~/.openclaw/openclaw.json`, agent definitions, Telegram bindings, bot tokens — no edits
 - No OpenClaw crons added/removed (there are currently none)
-- Shared scripts (`produce.py`, `render.py`, `copy.py`, `sheetlog.py`, `sheets.py`, wrappers in `/opt/homebrew/bin`) — bug fixes only, backward-compatible, since OpenClaw calls the same files
+- Shared scripts (`produce.py`, `render.py`, `copywriter.py`, `sheetlog.py`, `sheets.py`, wrappers in `/opt/homebrew/bin`) — bug fixes only, backward-compatible, since OpenClaw calls the same files
 - New files added by this plan (`MIGRATION.md`, `brief.json` jobs, `.claude/skills/*`, later `telegram.py`/`approvals.py`/`trust.py`) are **additive only** and not in OpenClaw's bootstrap set — invisible to the running agent
 
 **Cutover (end of F6) is the single switching moment:** retire the `acme` agent binding in OpenClaw, drop the Google Sheet (Supabase becomes sole system-of-record), restructure `CLAUDE.md`/`ENGINE.md` for Claude Code as the sole orchestrator, and fold the TOOLS.md schema fix in then. Until that day, both systems coexist: OpenClaw = live operations, Claude Code = build + validation.
@@ -302,7 +376,7 @@ Devon's guide specifies a stack (Supabase + Trigger.dev + Creatomate + Claude AP
 |---|---|---|
 | 1 · DISCOVER (Apify/SearchAPI scrape) | F3 Research | ✅ Adopt — same tools. ⚠️ except scraping Devon's *saved IG posts* (see blockers). |
 | 2 · SCORE & SELECT (persona/niche/intent scoring) | F3 + Part 1A.1 personas | ✅ Adopt scoring criteria into the brief-selection step. |
-| 3 · GENERATE (copy + visual direction) | M2 copy.py + M1 brief | ✅ Adopt — `copy.py` already enforces brand voice + compliance. |
+| 3 · GENERATE (copy + visual direction) | M2 copywriter.py + M1 brief | ✅ Adopt — `copywriter.py` already enforces brand voice + compliance. |
 | 4 · TELEGRAM REVIEW (A/R/E approval) | F2 approvals.py | ✅ Adopt — maps to APPROVE/REJECT/REVISE flow. |
 | 5 · PRODUCE VISUALS (**Creatomate**) | **M3–M5 Higgsfield + HyperFrames + produce.py** | ❌ **Reject Creatomate.** Our core already does this and Creatomate can't match HyperFrames synced captions. This is the whole point of Part 1. |
 | 6 · SCHEDULE & PUBLISH (Blotato) | F1 Publishing | ✅ Adopt — same tool. |
@@ -310,7 +384,7 @@ Devon's guide specifies a stack (Supabase + Trigger.dev + Creatomate + Claude AP
 | 8 · FEEDBACK LOOP | F5 Feedback (lite) | ⚠️ Adopt de-scoped — weights updater, not an intelligence layer. |
 | Infra: **Supabase** (7 tables + storage) | **Supabase cloud Postgres** (system-of-record) + `output/jobs/` for media files | ✅ **Adopt** (decided 2026-06-16). Sheets dropped at cutover. Schema via CLI migrations; runtime via `db.py`/supabase-py. Right tool for the relational scoring/feedback work. |
 | Infra: **Trigger.dev** (orchestration) | Claude Code + launchd (F4) | ❌ **Reject.** Cloud workflow runner can't call local higgsfield CLI / Playwright / ffmpeg / HyperFrames. Visual stage is local-only by physical necessity. |
-| Infra: **Claude API** | OpenRouter (copy.py) | ⚠️ Keep OpenRouter — same models, already wired. |
+| Infra: **Claude API** | OpenRouter (copywriter.py) | ⚠️ Keep OpenRouter — same models, already wired. |
 
 ### Part 5.1 — External dependencies
 

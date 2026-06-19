@@ -32,7 +32,7 @@ acme-sheets clear "Sheet1!D2:D"
 | C | Stage | `Ideation` \| `Draft` \| `Production` \| `Scheduled` \| `Published` \| `Review` |
 | D | Topic/Link | Human-readable topic or URL |
 | E | Draft Copy | Caption draft (usually blank on first log) |
-| **F** | **Prompt** | **Generation prompt used (Higgsfield/DTC/copy.py)** |
+| **F** | **Prompt** | **Generation prompt used (Higgsfield/DTC/copywriter.py)** |
 | G | Media Link | Local path or CDN URL of the asset |
 | H | My Remarks | Free-text notes |
 | I | Pass | `""` \| `Approved` \| `Rejected` |

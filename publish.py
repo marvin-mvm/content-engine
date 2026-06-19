@@ -17,7 +17,7 @@ What it reads from the job folder
 ---------------------------------
   brief.json        the M1 contract (type, brand, product_feature, default platforms)
   qc.json           the M6 QC pass marker  {"passed": true, ...}  (REQUIRED to publish)
-  captions.json     per-platform captions (the reviewed M2/M6 artifact copy.py feeds)
+  captions.json     per-platform captions (the reviewed M2/M6 artifact copywriter.py feeds)
   <media>           reel  -> <job>-final.mp4
                     image -> <job_id>.png  (single)  or  <job_id>-slide-*.png (carousel)
 
@@ -85,19 +85,9 @@ TEMPLATE_ASPECT = [
     (re.compile(r"static-callout"), "1:1"),
 ]
 
-# Banned medical-claim language (SOUL §12 + MIGRATION §1A.5). Union of the brand
-# hard-stops; any hit blocks publishing.
-BANNED = re.compile(
-    r"\b(cure|cures|cured|curing|treat|treats|treated|treating|"
-    r"heal|heals|healed|healing|fix|fixes|fixed|fixing|"
-    r"prevent|prevents|prevented|preventing|diagnos\w+|"
-    r"proven\s+to|guarantee|guarantees|guaranteed|"
-    r"miracle|breakthrough|game[-\s]?changer)\b",
-    re.IGNORECASE,
-)
-
-# RUO footer evidence (any one phrase satisfies the Labs RUO requirement).
-RUO_RE = re.compile(r"research use only|not for human consumption|\bRUO\b", re.IGNORECASE)
+# Compliance — SINGLE SOURCE OF TRUTH is compliance.py (Red/Yellow/Green framework).
+# RED = hard block (any hit blocks publishing); RUO_RE = the Labs RUO requirement.
+from compliance import BANNED, RUO_RE, red_hits, yellow_hits, say_instead  # noqa: F401
 
 X_LIMIT = 280
 
@@ -120,7 +110,7 @@ def load_captions(job: Path) -> dict:
     p = job / "captions.json"
     if not p.exists():
         fail(f"no captions.json in {job} — author per-platform captions first "
-             f"(copy.py --platform ...; see publish.py docstring for the contract)")
+             f"(copywriter.py --platform ...; see publish.py docstring for the contract)")
     try:
         return json.loads(p.read_text())
     except json.JSONDecodeError as e:
@@ -198,13 +188,28 @@ def resolve_targets(requested, media_kind):
     return active, skips
 
 
-def media_urls_for(target, all_urls, kind):
-    """Per-platform media selection. X = single opinion tweet w/ cover image (proven
-    ACME-011 treatment); YouTube = the one video; tiktok/instagram = full set."""
+def media_urls_for(target, all_urls, kind, cap=None):
+    """Per-platform MAIN-post media.
+    X/Twitter: a THREAD caption (cap.thread non-empty) → cover only on the lead tweet — each
+    thread post carries its own slide (see thread_media_for), so the carousel becomes a
+    tweet-per-slide thread (CONTENT_ENGINE_GUIDE §3.4 / SOUL §6). No thread → up to 4 images in
+    one post (X's native max). YouTube = the one video; tiktok/instagram = full set."""
     plat = target["blotato"]
-    if plat in ("twitter", "youtube"):
+    if plat == "youtube":
         return all_urls[:1]
+    if plat == "twitter":
+        if cap and cap.get("thread"):
+            return all_urls[:1]        # thread: cover rides the lead tweet
+        return all_urls[:4]            # single post: X hard limit = 4 images
     return all_urls
+
+
+def thread_media_for(target, cap, all_urls):
+    """Per-thread-post images for an X thread: thread post i → slide i+1, so each tweet carries
+    its own slide (1:1 with the deck). Empty list for non-thread / non-X targets."""
+    if target["blotato"] != "twitter" or not (cap and cap.get("thread")):
+        return []
+    return [(all_urls[i + 1] if i + 1 < len(all_urls) else "") for i in range(len(cap["thread"]))]
 
 
 # ── the compliance gate ─────────────────────────────────────────────────────────
@@ -332,15 +337,17 @@ def upload_all(files, job, go, reupload):
     return urls
 
 
-def build_publish_cmd(target, cap, media_urls, when):
+def build_publish_cmd(target, cap, media_urls, when, thread_media=None):
     """The exact blotato.py publish argv for one platform. --raw so we capture the
-    postSubmissionId + publicUrl (the formatted output drops the live post URL)."""
+    postSubmissionId + publicUrl. For an X thread, each --also post is positionally paired with
+    its own --also-media so every slide rides its tweet (slide-per-tweet, per the guide)."""
     cmd = ["python3", BLOTATO, "publish", cap["text"],
            "--account-id", target["account_id"], "--platform", target["blotato"], "--raw"]
     for u in media_urls:
         cmd += ["--media-url", u]
-    for follow in cap["thread"]:
-        cmd += ["--also", follow]
+    thread_media = thread_media or []
+    for i, follow in enumerate(cap["thread"]):
+        cmd += ["--also", follow, "--also-media", (thread_media[i] if i < len(thread_media) else "")]
     if when:
         cmd += ["--schedule", when]
     if target["blotato"] == "youtube" and cap.get("title"):
@@ -395,6 +402,41 @@ def record_run(job, mode, when, posts):
     })
     path.write_text(json.dumps(doc, ensure_ascii=False, indent=2))
     return path
+
+
+def mark_published_and_notify(job, posts):
+    """After a live --go run: advance status->published and ping the Telegram engine group
+    with the live URLs ("ACME-NNN now posted"). BEST-EFFORT — the irreversible post already
+    happened, so neither step may raise. Lazy imports keep publish.py runnable standalone."""
+    succeeded = [p for p in posts if p.get("ok") and p.get("post_url")]
+    failed = [p for p in posts if p.get("ok") is False]
+    job_id = job.name
+
+    # 1) status -> published (only if not already; publish_slot.py won't re-stamp it).
+    try:
+        import engine as e
+        prev = e.read_status(job_id) or {}
+        if succeeded and prev.get("status") != "published":
+            extra = {"published_at": e.now_iso()}
+            if prev.get("slot"):
+                extra["slot"] = prev["slot"]
+            e.write_status(job_id, "published", **extra)
+    except Exception as ex:
+        print(f"[publish] status->published skipped (non-fatal): {ex}", file=sys.stderr)
+
+    # 2) Telegram notification back to the engine group.
+    try:
+        import telegram as tg
+        if succeeded:
+            lines = [f"✅ *{job_id}* now posted:"]
+            lines += [f"• {p['platform'].upper()}: {p['post_url']}" for p in succeeded]
+            lines += [f"• {p['platform'].upper()}: ⚠️ failed" for p in failed]
+            tg.send_text("\n".join(lines), dry_run=False)
+        elif failed:
+            plats = ", ".join(p["platform"].upper() for p in failed)
+            tg.send_text(f"⚠️ *{job_id}* publish FAILED on {plats} — check the logs.", dry_run=False)
+    except Exception as ex:
+        print(f"[publish] telegram notify skipped (non-fatal): {ex}", file=sys.stderr)
 
 
 # ── main ─────────────────────────────────────────────────────────────────────────
@@ -475,8 +517,9 @@ def main():
     posts = []
     for t in active:
         cap = caption_for(captions, t["name"])
-        urls = media_urls_for(t, ordered_urls, media["kind"])
-        cmd = build_publish_cmd(t, cap, urls, args.when)
+        urls = media_urls_for(t, ordered_urls, media["kind"], cap)
+        thread_media = thread_media_for(t, cap, ordered_urls)
+        cmd = build_publish_cmd(t, cap, urls, args.when, thread_media=thread_media)
         sys.stderr.flush()
         print(f"\n# {t['name']} -> Blotato {t['blotato']} (account {t['account_id']})", file=sys.stderr, flush=True)
         if not args.go:
@@ -504,6 +547,7 @@ def main():
     if args.go:
         rec = record_run(job, mode, args.when, posts)
         print(f"\n[publish] recorded -> {rec}", file=sys.stderr)
+        mark_published_and_notify(job, posts)
         print("\n⚠️  VERIFY EACH POST VISUALLY on the platform — a 200/published from the API "
               "confirms only the MAIN post, and a published post cannot be deleted via Blotato "
               "(RUNBOOK §11 P4/P6).", file=sys.stderr)

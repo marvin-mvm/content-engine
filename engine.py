@@ -57,19 +57,11 @@ PILLAR_SLOT = {                         # mirrors research.py PILLAR_PRESETS["sl
 # Overridable via .env (ENGINE_CAP_COPY / ENGINE_CAP_SEARCHAPI / ENGINE_CAP_APIFY).
 DEFAULT_CAPS = {"copy": 30, "searchapi": 20, "apify": 3}
 
-# ── compliance constants (mirror publish.py / copy.py so produce-step output passes
-#    the publish gate verbatim) ────────────────────────────────────────────────
-RUO_SENTENCE = "For research use only — not for human consumption."
-RUO_RE = re.compile(r"research use only|not for human consumption|\bRUO\b", re.IGNORECASE)
-# Banned medical-claim language — copied VERBATIM from publish.py BANNED so the
-# produce step never writes a caption that passes here but fails the publish gate.
-BANNED = re.compile(
-    r"\b(cure|cures|cured|curing|treat|treats|treated|treating|"
-    r"heal|heals|healed|healing|fix|fixes|fixed|fixing|"
-    r"prevent|prevents|prevented|preventing|diagnos\w+|"
-    r"proven\s+to|guarantee|guarantees|guaranteed|"
-    r"miracle|breakthrough|game[-\s]?changer)\b",
-    re.IGNORECASE,
+# ── compliance — SINGLE SOURCE OF TRUTH is compliance.py (Red/Yellow/Green framework).
+#    Re-exported so existing callers keep working: e.BANNED / e.RUO_SENTENCE / e.RUO_RE,
+#    plus e.red_hits / e.yellow_hits / e.say_instead for the richer checks.
+from compliance import (  # noqa: F401
+    BANNED, RUO_SENTENCE, RUO_RE, red_hits, yellow_hits, say_instead,
 )
 X_LIMIT = 280
 
@@ -89,13 +81,36 @@ def today_pt() -> str:
 
 
 def load_env(key: str, default: str | None = None) -> str | None:
-    """Read a key from .env (values never printed/committed) or the environment."""
+    """Read a key from .env (values never printed/committed) or the environment.
+    The environment takes precedence so a launchd/CLI override beats the file."""
+    val = os.environ.get(key)
+    if val is not None:
+        return val
     if ENV_FILE.exists():
         for line in ENV_FILE.read_text().splitlines():
             line = line.strip()
             if line.startswith(f"{key}="):
                 return line.split("=", 1)[1].strip().strip('"').strip("'")
-    return os.environ.get(key, default)
+    return default
+
+
+def tls_verify():
+    """The `verify` value for requests. Secure by default (certifi CA bundle — the repo
+    pattern, what works on the real machine); set ENGINE_INSECURE_SSL=1 to disable it
+    behind a self-signed/MITM proxy (e.g. the build sandbox). Never persist that flag in
+    .env — launchd on the real machine must verify."""
+    if (load_env("ENGINE_INSECURE_SSL") or "").strip() == "1":
+        try:
+            import urllib3
+            urllib3.disable_warnings()
+        except ImportError:
+            pass
+        return False
+    try:
+        import certifi
+        return certifi.where()
+    except ImportError:
+        return True
 
 
 # ── STOP kill-switch ────────────────────────────────────────────────────────────
@@ -327,10 +342,19 @@ def is_labs(brief: dict) -> bool:
 
 def ensure_ruo(text: str, brief: dict) -> str:
     """For Labs briefs, guarantee the RUO line is present (publish.py blocks Labs posts
-    that lack it — and copy.py only auto-appends it for product-features). Idempotent."""
+    that lack it — and copywriter.py only auto-appends it for product-features). Idempotent."""
     if is_labs(brief) and not RUO_RE.search(text or ""):
         return (text.rstrip() + f"\n\n{RUO_SENTENCE}") if text else RUO_SENTENCE
     return text
+
+
+def ensure_link(text: str, link: str | None) -> str:
+    """Fold the brief's product/COA link into a caption so the card's "VIEW COA" CTA points
+    somewhere real on every platform (the live SKU's product page carries the 3rd-party COA).
+    No link → unchanged. Idempotent (won't double-append if the exact URL is already present)."""
+    if not link or link in (text or ""):
+        return text
+    return (text.rstrip() + f"\nCOA: {link}") if text else f"COA: {link}"
 
 
 if __name__ == "__main__":          # tiny status dump for humans / launchd logs

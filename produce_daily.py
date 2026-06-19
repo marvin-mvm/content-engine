@@ -6,11 +6,11 @@ Orchestrates the proven 0-credit core into review-ready job folders:
 
     research.py run --carousel   →  brief.json (+ copy.json, slides.json)   [topic/outlier discovery]
     post.py <job>                →  slide/static PNGs                        [render]
-    copy.py --platform x|tiktok|instagram  →  captions.json                  [THE BRIDGE]
+    copywriter.py --platform x|tiktok|instagram  →  captions.json                  [THE BRIDGE]
 
 THE BRIDGE (why this script exists): research.py writes copy.json (ONE caption), but
 publish.py's gate needs captions.json (one UNIQUE caption per platform) AND the RUO line
-on EVERY Labs caption. copy.py only auto-appends RUO for --product-feature posts, so
+on EVERY Labs caption. copywriter.py only auto-appends RUO for --product-feature posts, so
 without this step every non-product Labs post would be blocked at publish. We generate a
 shaped caption per platform, force RUO on all Labs captions, strip hashtags + fit X to
 ≤280 (the publish gate's hard X rule), and write captions.json the gate will accept.
@@ -41,7 +41,7 @@ import engine as e
 PY = sys.executable or "python3"
 RESEARCH = str(e.WORKSPACE / "research.py")
 POST = str(e.WORKSPACE / "post.py")
-COPY = str(e.WORKSPACE / "copy.py")
+COPY = str(e.WORKSPACE / "copywriter.py")
 
 # captions.json always carries the live publish channels (x, tiktok) + instagram; any
 # extra platform named in the brief (threads/facebook) is appended. Canonical order.
@@ -91,7 +91,7 @@ def append_hashtags(text: str, hashtags: list[str], cap: int) -> str:
 
 
 def call_copy(topic: str, brand: str, platform: str, brief: dict) -> dict | None:
-    """One copy.py call (M2) → its JSON. Spend-capped. None on failure/cap."""
+    """One copywriter.py call (M2) → its JSON. Spend-capped. None on failure/cap."""
     if not e.spend("copy", 1):
         return None
     args = [PY, COPY, topic, "--brand", brand, "--platform", platform]
@@ -103,7 +103,7 @@ def call_copy(topic: str, brand: str, platform: str, brief: dict) -> dict | None
             args += ["--class", brief["class"]]
     r = subprocess.run(args, capture_output=True, text=True)
     if r.returncode != 0:
-        e.log(f"copy.py failed ({platform}): {(r.stderr or r.stdout)[-200:]}")
+        e.log(f"copywriter.py failed ({platform}): {(r.stderr or r.stdout)[-200:]}")
         return None
     try:
         return json.loads(r.stdout)
@@ -114,8 +114,33 @@ def call_copy(topic: str, brand: str, platform: str, brief: dict) -> dict | None
                 return json.loads(m.group(0))
             except json.JSONDecodeError:
                 pass
-        e.log(f"copy.py returned non-JSON for {platform}")
+        e.log(f"copywriter.py returned non-JSON for {platform}")
         return None
+
+
+def build_x_thread(slides: list, brief: dict, link: str | None) -> dict | None:
+    """Turn a carousel's slides.json into an X THREAD — one tweet per slide (headline + body,
+    hashtags stripped, fitted to <=280). The lead tweet is the hook (slide 1); RUO + the COA
+    link fold into the LAST tweet (the CTA slide), room reserved. Mirrors the guide's
+    "each carousel slide → a tweet" (CONTENT_ENGINE_GUIDE §3.4 / SOUL §6). The publish gate
+    re-checks every tweet (<=280, 0 hashtags, RUO somewhere in the thread)."""
+    tweets = []
+    for s in slides:
+        if not isinstance(s, dict):
+            continue
+        head = " ".join(x for x in (s.get("HEAD_1"), s.get("HEAD_2_ITALIC"), s.get("HEAD_3")) if x).strip()
+        body = (s.get("BODY") or "").strip()
+        raw = (f"{head} — {body}" if (head and body) else (head or body)).strip(" —")
+        t = fit_x(strip_hashtags(raw))
+        if t:
+            tweets.append(t)
+    if not tweets:
+        return None
+    reserve = (len(e.RUO_SENTENCE) + 2 if e.is_labs(brief) else 0) + (len(link) + 6 if link else 0)
+    last = fit_x(strip_hashtags(tweets[-1]), reserve=reserve)
+    last = e.ensure_link(last, link)
+    tweets[-1] = e.ensure_ruo(last, brief)
+    return {"text": tweets[0], "thread": tweets[1:]}
 
 
 def build_captions(job_dir: Path, force: bool = False) -> dict | None:
@@ -142,9 +167,29 @@ def build_captions(job_dir: Path, force: bool = False) -> dict | None:
         if p not in platforms:
             platforms.append(p)
 
-    captions: dict[str, str] = {}
+    # Product/COA link (live SKU only) → folded into every caption so the card's "VIEW COA"
+    # CTA resolves to a real page on every platform. None for non-live compounds.
+    link = brief.get("link")
+
+    # A carousel becomes a slide-per-tweet THREAD on X (the guide's preferred treatment).
+    slides = e.load_json(job_dir / "slides.json")
+    is_carousel = bool(brief.get("image", {}).get("carousel")) and isinstance(slides, list) and len(slides) > 1
+
+    captions: dict = {}
     warnings: list[str] = []
     for p in platforms:
+        if p == "x" and is_carousel:
+            xt = build_x_thread(slides, brief, link)
+            if xt:
+                captions["x"] = xt
+                for i, post in enumerate([xt["text"], *xt["thread"]]):
+                    for hit in e.red_hits(post):
+                        fix = e.say_instead(hit)
+                        warnings.append(f"[x] tweet {i+1} RED claim {hit!r} — REVISE" + (f" → {fix}" if fix else ""))
+                    if len(post) > e.X_LIMIT or "#" in post:
+                        warnings.append(f"[x] tweet {i+1} shape off ({len(post)} chars / hashtags)")
+                continue
+            # thread build failed → fall through to a single X caption
         cp = call_copy(topic, brand, p, brief)
         if not cp:
             warnings.append(f"no caption generated for {p}")
@@ -152,22 +197,31 @@ def build_captions(job_dir: Path, force: bool = False) -> dict | None:
         text = (cp.get("caption") or "").strip()
         hashtags = cp.get("hashtags") or []
         if p == "x":
-            # X: 0 hashtags, <= 280 incl. the RUO line for Labs.
+            # X: 0 hashtags, <= 280 incl. the RUO line (Labs) AND the COA link. Reserve room
+            # for both, trim the body, then append link then RUO (RUO stays the last line).
             reserve = (len(e.RUO_SENTENCE) + 2) if e.is_labs(brief) else 0
-            text = e.ensure_ruo(fit_x(text, reserve=reserve), brief)
+            if link:
+                reserve += len(link) + 6  # "\nCOA: " + url
+            text = fit_x(text, reserve=reserve)
+            text = e.ensure_link(text, link)
+            text = e.ensure_ruo(text, brief)
         else:
             text = append_hashtags(text, hashtags, HASHTAG_CAP.get(p, 0))
+            text = e.ensure_link(text, link)
             text = e.ensure_ruo(text, brief)
         # Pre-flight the publish gate's own checks so we surface problems at produce time.
-        if e.BANNED.search(text):
-            warnings.append(f"[{p}] banned-claim word — human must REVISE: "
-                            f"{e.BANNED.search(text).group(0)!r}")
+        for hit in e.red_hits(text):
+            fix = e.say_instead(hit)
+            warnings.append(f"[{p}] RED claim {hit!r} — human must REVISE" + (f" → {fix}" if fix else ""))
+        yl = e.yellow_hits(text)
+        if yl:
+            warnings.append(f"[{p}] efficacy verb(s) {yl} need research-subject framing ('may'/'research suggests')")
         if p == "x" and (len(text) > e.X_LIMIT or "#" in text):
             warnings.append(f"[{p}] X shape off ({len(text)} chars / hashtags) — check")
         captions[p] = text
 
     if not captions:
-        e.log(f"{job_dir.name}: produced ZERO captions (copy.py failures / cap) — not writing")
+        e.log(f"{job_dir.name}: produced ZERO captions (copywriter.py failures / cap) — not writing")
         return None
     out_path.write_text(json.dumps(captions, ensure_ascii=False, indent=2))
     e.log(f"{job_dir.name}: captions.json -> {sorted(captions)}"
@@ -218,7 +272,7 @@ def cmd_run(args):
     date = e.today_pt()
 
     # Budget-gate the research sweep (searchapi + the one apify outlier extract). The
-    # per-call teeth are on copy.py below; research.py caches its API calls (24h/7d).
+    # per-call teeth are on copywriter.py below; research.py caches its API calls (24h/7d).
     if not args.skip_research:
         if not e.spend("searchapi", 1) or not e.spend("apify", 1):
             e.log("research sweep skipped — searchapi/apify daily cap reached.")

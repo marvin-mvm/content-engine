@@ -67,7 +67,7 @@ def extract_prompt(job: dict) -> str:
 
     Higgsfield stores the submitted prompt under params.prompt for video jobs
     (verified against `higgsfield generate list --json`); some job shapes use a
-    top-level "prompt" or an "input" object instead. Same lookup chain copy.py
+    top-level "prompt" or an "input" object instead. Same lookup chain copywriter.py
     uses. This is the value Content Matrix col F must record — without it,
     produce.py --video falls back to logging the local mp4 path (bug #1).
     """
@@ -130,7 +130,7 @@ def main():
     ap = argparse.ArgumentParser(description="One poll-and-finish cycle for an async Higgsfield video job")
     ap.add_argument("job_id")
     ap.add_argument("--template", required=True, help="HTML template for the branded thumbnail")
-    ap.add_argument("--json", dest="json_file", help="copy.py JSON for overlay tokens")
+    ap.add_argument("--json", dest="json_file", help="copywriter.py JSON for overlay tokens")
     ap.add_argument("--set", metavar="KEY=VALUE", action="append", default=[], dest="pairs")
     ap.add_argument("--out", help="Final mp4 path (default: output/<job_id>.mp4)")
     ap.add_argument("--cron-name", help="If set, remove this cron job on DONE/FAILED (self-cleanup)")

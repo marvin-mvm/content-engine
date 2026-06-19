@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-copy.py — Acme brand-voice copy generator (OpenRouter).
+copywriter.py — Acme brand-voice copy generator (OpenRouter).
 
 Generates brand-compliant copy for a post in one call:
   - Template overlay tokens (EYEBROW, HOOK_LINE_1/2/3, SUBTITLE_TEXT, CTA_LABEL, HANDLE)
@@ -11,26 +11,26 @@ Output is a single JSON object. The overlay tokens feed produce.py --json;
 the caption/hashtags/alt_text feed the Blotato publish step (SYSTEM_CONTEXT §18).
 
 Usage:
-  copy.py "TOPIC" --brand labs|health [--kind full|overlay|caption]
+  copywriter.py "TOPIC" --brand labs|health [--kind full|overlay|caption]
                   [--product-feature] [--compound "BPC-157" --class "PENTADECAPEPTIDE"]
                   [--platform instagram|tiktok|twitter|x|youtube|threads|facebook|linkedin]
                   [--model MODEL] [--raw]
 
   # Auto-derive topic from a Higgsfield job (reads the generation prompt from metadata):
-  copy.py --job-id JOB_ID --brand labs|health [--platform ...]
+  copywriter.py --job-id JOB_ID --brand labs|health [--platform ...]
 
 Examples:
   # Full copy for a Health metabolic post, save tokens for produce.py:
-  python3 copy.py "semaglutide mechanism of action" --brand health > /tmp/copy.json
+  python3 copywriter.py "semaglutide mechanism of action" --brand health > /tmp/copy.json
   python3 produce.py templates/src/story-reel-dark.html --json /tmp/copy.json \\
       --bg-prompt "..."
 
   # Product-feature post (auto-appends RUO + class/COA chips):
-  python3 copy.py "BPC-157 tissue repair research" --brand labs \\
+  python3 copywriter.py "BPC-157 tissue repair research" --brand labs \\
       --product-feature --compound "BPC-157" --class "PENTADECAPEPTIDE"
 
   # Caption for an existing Higgsfield video — topic derived from the job prompt:
-  python3 copy.py --job-id 22a79dcc-1e1d-4876-9ee1-7f8016d11a61 --brand labs --platform tiktok
+  python3 copywriter.py --job-id 22a79dcc-1e1d-4876-9ee1-7f8016d11a61 --brand labs --platform tiktok
 
 Reads OPENROUTER_API_KEY from .env (same folder) or environment.
 """
@@ -127,13 +127,7 @@ statement ("In today's world…", "Are you tired of…").
 - Max 3 emoji, and ONLY from this set: 🔬 🧬 📊 ⚡ ✓. Zero emoji is fine and often better.
 - No exclamation-point hype. No "miracle", "breakthrough", "game-changer", "cure".
 
-COMPLIANCE (hard stops):
-- NEVER say a compound "treats", "cures", "prevents", or "diagnoses" anything. \
-Frame as "research suggests", "studies report", or "participants reported".
-- Dosage is research context only — never personal medical advice.
-- Never name or disparage a competitor brand.
-- Acme Labs content: refer to mechanism, structure, and pre-clinical evidence only \
-— it is research-use-only material, never for human use.
+__COMPLIANCE_BLOCK__
 - Acme Health content: clinician-supervised; therapeutic framing is allowed only \
 when clinician-reviewed and source-cited.
 
@@ -175,11 +169,7 @@ NON-NEGOTIABLE VOICE: reading level grade 8-9; plain English; define any acronym
 first use; sourced, specific, patient; never hyped, never vague. Serious, conversational, \
 matter-of-fact. Comfortable saying "the evidence is mixed."
 
-COMPLIANCE (hard stops): NEVER say a compound "treats", "cures", "prevents", "heals", \
-"fixes", or is "proven to" do anything. Frame as "research suggests" / "studies report" / \
-"in preclinical models" / "participants reported". Dosage is research context only — never \
-personal medical advice. Never name or disparage a competitor. Acme Labs material is \
-research-use-only, never for human use. No "miracle/breakthrough/game-changer".
+__COMPLIANCE_BLOCK__
 
 SLIDE-DECK STRUCTURE (exactly {n} slides, in order):
 - Slide 1 = the HOOK / cover: the promise of the whole deck. EYEBROW = the topic label.
@@ -303,8 +293,8 @@ def extract_json(text):
 
 # ── Compliance enforcement (safety net beyond the prompt) ────────────────────
 
-BANNED = re.compile(r"\b(cure|cures|cured|treat|treats|treating|prevent|prevents|"
-                    r"diagnos\w*|miracle|breakthrough|game[- ]?changer)\b", re.IGNORECASE)
+# Compliance (RED/YELLOW) — single source of truth is compliance.py (Red/Yellow/Green framework).
+from compliance import red_hits, yellow_hits, say_instead, PROMPT_RULES
 ALLOWED_EMOJI = set("🔬🧬📊⚡✓")
 EMOJI_RE = re.compile(
     "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF←-⇿⬀-⯿]"
@@ -320,9 +310,22 @@ def enforce(result, args, brand):
 
     caption = result.get("caption", "")
 
-    # Banned medical-claim verbs
-    if BANNED.search(caption):
-        warnings.append(f"caption contains a banned claim word: {BANNED.search(caption).group(0)!r}")
+    # RED claims (FDA/Meta hard-stops) — scan the caption AND every slide body/headline,
+    # not just the caption (the old check missed slide copy → "healing" slipped through).
+    texts = [("caption", caption)]
+    for i, s in enumerate(result.get("slides") or []):
+        for k in ("HEAD_1", "HEAD_2_ITALIC", "HEAD_3", "BODY"):
+            if isinstance(s, dict) and s.get(k):
+                texts.append((f"slide{i+1}.{k}", s[k]))
+    for where, t in texts:
+        for hit in red_hits(t):
+            fix = say_instead(hit)
+            warnings.append(f"RED claim in {where}: {hit!r}" + (f" — say instead: {fix}" if fix else ""))
+    # YELLOW: efficacy verbs without research-subject framing/hedge (advisory).
+    yl = yellow_hits(caption)
+    if yl:
+        warnings.append(f"caption efficacy verb(s) {yl} need YELLOW framing "
+                        "('research subjects' + 'may'/'research suggests')")
 
     # Caption must not open with "I", brand name, or a generic lead-in
     first = caption.lstrip().split(maxsplit=1)
@@ -397,11 +400,12 @@ def enforce_carousel(result, args, brand):
     if len(slides) != args.carousel:
         warnings.append(f"model returned {len(slides)} slides (asked for {args.carousel})")
 
-    # Banned-claim scan across every slide's text.
+    # RED-claim scan across every slide's text (Red/Yellow/Green framework).
     for i, s in enumerate(slides, 1):
         blob = " ".join(str(s.get(k, "")) for k in ("HEAD_1", "HEAD_2_ITALIC", "HEAD_3", "BODY"))
-        if BANNED.search(blob):
-            warnings.append(f"slide {i} contains a banned claim word: {BANNED.search(blob).group(0)!r}")
+        for hit in red_hits(blob):
+            fix = say_instead(hit)
+            warnings.append(f"RED claim in slide {i}: {hit!r}" + (f" — say instead: {fix}" if fix else ""))
 
     # RUO on the final slide for Labs / product-feature decks (auto-append if missing).
     if (args.brand == "labs" or args.product_feature):
@@ -411,10 +415,14 @@ def enforce_carousel(result, args, brand):
             last["BODY"] = (body.rstrip() + " " + RUO_SENTENCE).strip()
             warnings.append("RUO sentence auto-appended to the final slide")
 
-    # Shared caption checks (banned, lead-word, emoji policy).
+    # Shared caption checks (RED/YELLOW, lead-word, emoji policy).
     caption = result.get("caption", "")
-    if BANNED.search(caption):
-        warnings.append(f"caption contains a banned claim word: {BANNED.search(caption).group(0)!r}")
+    for hit in red_hits(caption):
+        fix = say_instead(hit)
+        warnings.append(f"RED claim in caption: {hit!r}" + (f" — say instead: {fix}" if fix else ""))
+    yl = yellow_hits(caption)
+    if yl:
+        warnings.append(f"caption efficacy verb(s) {yl} need YELLOW framing ('research subjects' + hedge)")
     first = caption.lstrip().split(maxsplit=1)
     if first and first[0].strip(".,!:").lower() in {"i", "acme"}:
         warnings.append(f"caption opens with disallowed word: {first[0]!r}")
@@ -520,6 +528,7 @@ def main():
     else:
         system = BRAND_SYSTEM
         user = build_user_prompt(args, brand)
+    system = system.replace("__COMPLIANCE_BLOCK__", PROMPT_RULES)   # inject the full framework
 
     messages = [
         {"role": "system", "content": system},

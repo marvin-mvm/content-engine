@@ -126,7 +126,10 @@ def main():
             continue
         ok = publish_job(e.JOBS_DIR / jid, live, args.when)
         if ok and live:
-            e.write_status(jid, "published", published_at=e.now_iso(), slot=slot)
+            # publish.py already advances status->published + notifies Telegram. Only stamp
+            # the slot here if it somehow didn't, so history isn't double-appended.
+            if (e.read_status(jid) or {}).get("status") != "published":
+                e.write_status(jid, "published", published_at=e.now_iso(), slot=slot)
             published += 1
         elif ok:
             e.log(f"{jid}: dry-run OK — gate passed, WOULD publish (supervised; not posted).")

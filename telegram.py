@@ -64,17 +64,31 @@ def _hook(job_dir: Path, captions: dict) -> str:
     return x.split("\n", 1)[0][:120]
 
 
-def _source(job_dir: Path) -> str:
+def _reference(job_dir: Path, brief: dict) -> dict:
+    """F3 provenance block. Canonical home is brief.reference (it travels IN the brief,
+    schema'd); fall back to research.json for jobs produced before the reference block."""
+    ref = brief.get("reference")
+    if not isinstance(ref, dict) or not ref:
+        r = e.load_json(job_dir / "research.json") or {}
+        ref = r.get("reference") if isinstance(r.get("reference"), dict) else {}
+    return ref or {}
+
+
+def _source(job_dir: Path, brief: dict) -> str:
+    """Short discovery-source label for the card."""
+    ref = _reference(job_dir, brief)
+    plat = ref.get("platform")
+    if plat == "topic-discovery":
+        return "topic discovery"
+    if plat:
+        fmt = ref.get("cloned_format")
+        return f"{plat}" + (f" · cloned {fmt}" if fmt else "")
+    # Legacy research.json shapes (jobs produced before the reference block).
     r = e.load_json(job_dir / "research.json") or {}
-    bits = []
     for k in ("source_url", "source", "url", "outlier_url"):
         if r.get(k):
-            bits.append(str(r[k]))
-            break
-    prov = r.get("provenance") or r
-    if isinstance(prov, dict) and prov.get("mode"):
-        bits.append(f"mode={prov['mode']}")
-    return " · ".join(bits) if bits else "topic discovery"
+            return str(r[k])
+    return "topic discovery"
 
 
 def build_card(job_dir: Path) -> str:
@@ -82,6 +96,7 @@ def build_card(job_dir: Path) -> str:
     brief = e.load_json(job_dir / "brief.json") or {}
     captions = e.load_json(job_dir / "captions.json") or {}
     st = e.read_status(job_id) or {}
+    ref = _reference(job_dir, brief)
     preview = (captions.get("instagram") or captions.get("x") or "").strip()
     if len(preview) > 320:
         preview = preview[:317].rstrip() + "…"
@@ -95,7 +110,17 @@ def build_card(job_dir: Path) -> str:
         f"• Pillar: {brief.get('pillar', '?')}   • Persona: {brief.get('persona', '?')}",
         f"• Brand: {brief.get('brand', '?')}   • Format: {media_kind}",
         f"• Slot (PT): {st.get('slot', '—')}   • Platforms: {', '.join(sorted(captions))}",
-        f"• Source: {_source(job_dir)}",
+        f"• Source: {_source(job_dir, brief)}",
+    ]
+    # Reference provenance — Mode B has the exact reviewable source video/URL; Mode A
+    # (topic discovery) has only the selection rationale. NOT part of the post — review only.
+    if ref.get("url"):
+        desc = ref.get("description") or ref.get("platform") or "source"
+        lines.append(f"📎 Reference: {desc}")
+        lines.append(f"   {ref['url']}")
+    elif ref.get("selection_rationale"):
+        lines.append(f"📎 Why: {ref['selection_rationale']}")
+    lines += [
         "",
         f"Reply: `APPROVE {job_id}`  /  `REJECT {job_id} [note]`  /  `REVISE {job_id} [note]`",
     ]
@@ -121,7 +146,8 @@ def send_text(text: str, dry_run: bool) -> bool:
         return True
     r = _requests()
     resp = r.post(API.format(token=token, method="sendMessage"),
-                  data={"chat_id": chat, "text": text, "parse_mode": "Markdown"}, timeout=30)
+                  data={"chat_id": chat, "text": text, "parse_mode": "Markdown"},
+                  timeout=30, verify=e.tls_verify())
     if resp.status_code != 200:
         e.log(f"sendMessage failed {resp.status_code}: {resp.text[:200]}")
         return False
@@ -141,7 +167,7 @@ def send_media_group(files: list[Path], dry_run: bool) -> bool:
     try:
         resp = r.post(API.format(token=token, method="sendMediaGroup"),
                       data={"chat_id": chat, "media": json.dumps(media)},
-                      files=handles, timeout=60)
+                      files=handles, timeout=60, verify=e.tls_verify())
     finally:
         for _, fh, _ in handles.values():
             fh.close()

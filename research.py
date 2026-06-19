@@ -3,7 +3,7 @@
 
 Produces brief.json files automatically, in TWO discovery modes, at 0 Higgsfield
 credits. It is the missing front-end of the engine: research finds *what to post*,
-the existing core (copy.py -> post.py / reel.py) renders it.
+the existing core (copywriter.py -> post.py / reel.py) renders it.
 
   MODE A — topic discovery  (`research.py topics`)
     Sweep PubMed/news/trends (searchapi/firecrawl) -> candidate topics, score by the
@@ -14,7 +14,7 @@ the existing core (copy.py -> post.py / reel.py) renders it.
     Find posts whose engagement is far above baseline (YouTube via searchapi —
     view velocity), OR take a dropped link (any platform). Extract the pattern
     (apify.py scrape / blotato.py source), then RECONFIGURE: rewrite the hook in the
-    Research-Pharmacist voice via copy.py, map the format to a template, STRIP the
+    Research-Pharmacist voice via copywriter.py, map the format to a template, STRIP the
     original's claims, apply compliance -> a Trending-Hook brief.json.
     CLONE THE STRUCTURE, NEVER THE CONTENT.
 
@@ -23,7 +23,7 @@ persona + brand), validate against schemas/brief.schema.json, and log discovery 
 a local JSON store (discovery_queue + daily_brief). Marvin's call (2026-06-18):
 local-JSON-first — a Supabase db.py can replace DiscoveryStore additively later.
 
-The shared tools (searchapi.py/firecrawl.py/apify.py/blotato.py/copy.py) are called
+The shared tools (searchapi.py/firecrawl.py/apify.py/blotato.py/copywriter.py) are called
 as black-box subprocesses and never modified. Every paid call is cached under
 output/research/cache/ (24h TTL) so re-runs don't re-spend — apify is the priciest
 call, so Mode B fires it once per URL only.
@@ -34,7 +34,7 @@ Usage:
   research.py inbox   URL [--pillar trending] [--persona P3] [--brand labs|health]
   research.py run     [--select 5]     # full day: 5 pillar briefs (topics + outliers)
 
-Add --dry-run to score + select + print WITHOUT calling copy.py or writing briefs
+Add --dry-run to score + select + print WITHOUT calling copywriter.py or writing briefs
 (the cheap iteration path). Reads API keys from .env via the shared tools.
 """
 
@@ -61,8 +61,8 @@ CACHE_TTL = 24 * 3600  # seconds
 # ── Strategy config (SOUL §7-9, MIGRATION 1A.1/1A.2, CONTENT_ENGINE_GUIDE §2/§5) ──
 
 # Pillar -> default template + the template families it may use + persona default.
-# Defaults are picked so copy.py can fill the renderable token set directly
-# (story-reel-dark tokens === copy.py overlay output). Everything renders at 0 credits.
+# Defaults are picked so copywriter.py can fill the renderable token set directly
+# (story-reel-dark tokens === copywriter.py overlay output). Everything renders at 0 credits.
 PILLAR_PRESETS = {
     "science":  {"template": "story-reel-dark", "alts": ["carousel-dark", "static-callout-dark"],
                  "persona": "P1", "slot": "08:00", "platforms": ["instagram", "tiktok", "x"]},
@@ -81,7 +81,7 @@ PILLAR_PRESETS = {
 CAROUSEL_TEMPLATES = {"carousel-dark", "carousel-light"}
 CAROUSEL_DEFAULT_SLIDES = 5
 
-# Persona voice hint injected into the copy.py topic string (copy.py has no persona
+# Persona voice hint injected into the copywriter.py topic string (copywriter.py has no persona
 # arg and we don't modify it — backward-compatible). MIGRATION 1A.1 / guide §1.
 PERSONA_VOICE = {
     "P1": "Audience: The Optimizer — data-dense, mechanism + numbers, ROI/return language.",
@@ -93,23 +93,23 @@ PERSONA_VOICE = {
 # and the class/spec chips on stack (static-compound) briefs.
 COMPOUND_CATALOG = {
     "Semaglutide":  {"cls": "GLP-1 ANALOG", "spec": "GLP-1 analog · 5mg lyophilized · ≥99% HPLC purity",
-                     "descriptor": "Incretin mimetic for metabolic research", "price": "$149", "live": True},
+                     "descriptor": "Incretin mimetic for metabolic research", "price": "$149", "live": True, "sku": "semaglutide-5mg"},
     "Tirzepatide":  {"cls": "GIP/GLP-1 ANALOG", "spec": "Dual GIP/GLP-1 agonist · research-grade",
                      "descriptor": "Dual incretin receptor research compound", "price": "—", "live": False},
     "Retatrutide":  {"cls": "TRIPLE AGONIST", "spec": "GLP-1/GIP/glucagon agonist · research-grade",
                      "descriptor": "Triple-agonist metabolic research compound", "price": "—", "live": False},
     "BPC-157":      {"cls": "PENTADECAPEPTIDE", "spec": "Body Protection Compound 157 · 5mg lyophilized · ≥99% HPLC purity",
-                     "descriptor": "Tissue-repair signaling research peptide", "price": "$59", "live": True},
+                     "descriptor": "Tissue-repair signaling research peptide", "price": "$59", "live": True, "sku": "bpc-157-5mg"},
     "TB-500":       {"cls": "THYMOSIN β-4 FRAGMENT", "spec": "Thymosin Beta-4 fragment · research-grade",
                      "descriptor": "Angiogenesis & repair research peptide", "price": "—", "live": False},
     "CJC-1295":     {"cls": "GHRH ANALOG", "spec": "GHRH/GHRP dual-action blend · 10mg lyophilized · ≥99% HPLC purity",
-                     "descriptor": "Growth-hormone axis research blend", "price": "$89", "live": True},
+                     "descriptor": "Growth-hormone axis research blend", "price": "$89", "live": True, "sku": "cjc-1295-ipamorelin"},
     "Ipamorelin":   {"cls": "GHRP", "spec": "GHRH/GHRP dual-action blend · 10mg lyophilized · ≥99% HPLC purity",
-                     "descriptor": "Selective ghrelin-receptor research peptide", "price": "$89", "live": True},
+                     "descriptor": "Selective ghrelin-receptor research peptide", "price": "$89", "live": True, "sku": "cjc-1295-ipamorelin"},
     "NAD+":         {"cls": "PRECURSOR RESEARCH", "spec": "NAD+ precursor research compound",
                      "descriptor": "Mitochondrial NAD+ biology research", "price": "—", "live": False},
     "Epithalon":    {"cls": "TETRAPEPTIDE", "spec": "Pineal tetrapeptide · 20mg lyophilized · ≥99% HPLC purity",
-                     "descriptor": "Telomerase & longevity research peptide", "price": "$79", "live": True},
+                     "descriptor": "Telomerase & longevity research peptide", "price": "$79", "live": True, "sku": "epithalon-20mg"},
     "Semax":        {"cls": "NEUROPEPTIDE", "spec": "Nootropic neuropeptide · research-grade",
                      "descriptor": "BDNF-modulation research peptide", "price": "—", "live": False},
     "Selank":       {"cls": "NEUROPEPTIDE", "spec": "Anxiolytic neuropeptide · research-grade",
@@ -326,6 +326,23 @@ def _catalog_match(topic):
     return None
 
 
+# Owned-site shop base per brand (SOUL §6: link acmelabs.co OR acmehealth.co, never both).
+SHOP_BASE = {"labs": "https://acmelabs.co/shop/", "health": "https://acmehealth.co/shop/"}
+
+
+def product_link(compound, brand):
+    """The canonical product/COA destination for a live SKU, or None.
+
+    A post whose CTA says "VIEW COA" must point somewhere real — the live product page,
+    where the independent 3rd-party COA is attached (PRODUCTS.md). Only LIVE SKUs get a
+    link; for non-live compounds we return None so we never promise a COA we can't show."""
+    info = COMPOUND_CATALOG.get(compound or "", {})
+    sku = info.get("sku")
+    if not (info.get("live") and sku):
+        return None
+    return SHOP_BASE.get(brand, SHOP_BASE["labs"]) + sku
+
+
 def print_breakdown(score):
     tw = score["topic_weight"]
     print(f"\nTOPIC: {score['topic']}"
@@ -448,9 +465,9 @@ def classify_format(text):
 
 
 def reconfigure(pattern, acme_topic, persona):
-    """CLONE THE STRUCTURE, NEVER THE CONTENT. Build the copy.py topic string from the
+    """CLONE THE STRUCTURE, NEVER THE CONTENT. Build the copywriter.py topic string from the
     viral FORMAT recipe + an Acme-owned topic. The original's claims are NEVER passed
-    through — only the structural archetype is reused. copy.py then writes the hook in
+    through — only the structural archetype is reused. copywriter.py then writes the hook in
     the Research-Pharmacist voice and enforces compliance (banned claims, RUO, etc.)."""
     arch = FORMAT_ARCHETYPES.get(pattern["format_type"], FORMAT_ARCHETYPES["study_reaction"])
     # Persona voice is appended once downstream in assemble_brief — don't duplicate it here.
@@ -514,8 +531,8 @@ def route_brand(topic, pillar):
 
 
 def run_copy(topic, brand, platform, product_feature, compound, cls, fresh=False, carousel=None):
-    """Call copy.py (M2) for the renderable overlay tokens + caption (or, with carousel=N,
-    an N-slide deck: cp['slides']). Reuses copy.py's compliance engine — the single source
+    """Call copywriter.py (M2) for the renderable overlay tokens + caption (or, with carousel=N,
+    an N-slide deck: cp['slides']). Reuses copywriter.py's compliance engine — the single source
     of truth for brand voice + banned claims."""
     args = [topic, "--brand", brand, "--platform", platform]
     if carousel:
@@ -526,7 +543,7 @@ def run_copy(topic, brand, platform, product_feature, compound, cls, fresh=False
             args += ["--compound", compound]
         if cls:
             args += ["--class", cls]
-    return run_tool("copy.py", args, ttl=CACHE_TTL, fresh=fresh)
+    return run_tool("copywriter.py", args, ttl=CACHE_TTL, fresh=fresh)
 
 
 def build_reference(*, url=None, platform="", description="", selection_rationale="",
@@ -549,7 +566,7 @@ def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
     """Produce one post.py-ready type=image brief.json (+ copy.json + research.json
     sidecars) from a selected topic. Returns the brief dict (and writes it unless dry-run).
 
-    carousel=N (or a carousel-* template) -> a full N-slide deck: copy.py --carousel writes
+    carousel=N (or a carousel-* template) -> a full N-slide deck: copywriter.py --carousel writes
     slides.json and the brief points post.py at it. Otherwise a single branded card."""
     preset = PILLAR_PRESETS[pillar]
     persona = persona or preset["persona"]
@@ -576,8 +593,14 @@ def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
             brief["class"] = cls
     if product_feature:
         brief["product_feature"] = True
+    # The CTA's COA/product promise needs a real destination: the live SKU's product page
+    # (where the 3rd-party COA lives). The bridge folds this into every caption so "VIEW COA"
+    # is fulfilled on every platform (None for non-live compounds → no empty promise).
+    link = product_link(compound, brand)
+    if link:
+        brief["link"] = link
     # Reference travels IN the brief (metadata only) so F2 can surface it and publish can
-    # exclude it. It is never passed to copy.py, so it cannot leak into the caption.
+    # exclude it. It is never passed to copywriter.py, so it cannot leak into the caption.
     if reference:
         brief["reference"] = reference
 
@@ -591,12 +614,12 @@ def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
     bn = "ACME HEALTH" if brand == "health" else "ACME LABS"
     handle = "@acmehealth" if brand == "health" else "@acmelabs"
 
-    # M2 — fill renderable copy via copy.py (persona hint folded into the topic).
+    # M2 — fill renderable copy via copywriter.py (persona hint folded into the topic).
     copy_topic = f"{topic}\n{PERSONA_VOICE.get(persona, '')}".strip()
     cp = run_copy(copy_topic, brand, "instagram", product_feature, compound, cls,
                   fresh=fresh, carousel=n_slides if want_carousel else None)
     if not isinstance(cp, dict) or not cp:
-        log(f"copy.py failed for {job_id} — writing brief without tokens (run copy.py later)")
+        log(f"copywriter.py failed for {job_id} — writing brief without tokens (run copywriter.py later)")
         cp = {}
 
     slides = cp.get("slides") if want_carousel else None
@@ -608,7 +631,7 @@ def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
                           "set": {"BRAND_NAME": bn, "HANDLE": handle}}
     else:
         if want_carousel:
-            log(f"carousel copy.py returned no slides for {job_id} — single-card fallback")
+            log(f"carousel copywriter.py returned no slides for {job_id} — single-card fallback")
         tokens = _map_tokens(template, cp, brand, compound, product_feature)
         brief["image"] = {"template": f"templates/src/{template}.html", "bg_policy": "plain",
                           "set": tokens}
@@ -616,9 +639,13 @@ def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
     (job_dir / "brief.json").write_text(json.dumps(brief, ensure_ascii=False, indent=2))
     if cp:
         (job_dir / "copy.json").write_text(json.dumps(cp, ensure_ascii=False, indent=2))
+    _ref = reference or {}
     (job_dir / "research.json").write_text(json.dumps(
         {"job_id": job_id, "discovered_at": now_iso(),
-         "reference": reference or {}, **(provenance or {})},
+         "reference": _ref,
+         # Flat mirrors so legacy readers (e.g. F4 telegram._source) still resolve the source.
+         "source_url": _ref.get("url"), "source_platform": _ref.get("platform"),
+         "cloned_format": _ref.get("cloned_format"), **(provenance or {})},
         ensure_ascii=False, indent=2))
 
     ok, errs = validate_brief(brief)
@@ -628,7 +655,7 @@ def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
 
 
 def _map_tokens(template, cp, brand, compound, product_feature):
-    """Map copy.py output -> the exact token names the chosen template needs."""
+    """Map copywriter.py output -> the exact token names the chosen template needs."""
     bn = cp.get("BRAND_NAME") or ("ACME HEALTH" if brand == "health" else "ACME LABS")
     handle = cp.get("HANDLE") or ("@acmehealth" if brand == "health" else "@acmelabs")
     ruo = "RUO · NOT FOR HUMAN CONSUMPTION"
@@ -650,7 +677,7 @@ def _map_tokens(template, cp, brand, compound, product_feature):
                 "STAT": cp.get("HOOK_LINE_2_ITALIC", ""), "STAT_LABEL": cp.get("SUBTITLE_TEXT", ""),
                 "SOURCE": "Peer-reviewed research", "TAGLINE": cp.get("HOOK_LINE_3", ""),
                 "RUO_LINE": ruo if product_feature else "", "HANDLE": handle}
-    # carousel-dark/light: single-card fallback (full slides.json is a copy.py follow-up)
+    # carousel-dark/light: single-card fallback (full slides.json is a copywriter.py follow-up)
     return {"BRAND_NAME": bn, "EYEBROW": cp.get("EYEBROW", "RESEARCH"),
             "HEAD_1": cp.get("HOOK_LINE_1", ""), "HEAD_2_ITALIC": cp.get("HOOK_LINE_2_ITALIC", ""),
             "HEAD_3": cp.get("HOOK_LINE_3", ""), "BODY": cp.get("SUBTITLE_TEXT", ""),
@@ -808,7 +835,8 @@ def cmd_outliers(args):
     top = outliers[0]
     log(f"extracting top outlier: {top['url']}")
     _extract_and_brief(top["url"], store, persona="P3", brand="labs", curated=False,
-                       outlier_meta=top, dry_run=args.dry_run, fresh=args.fresh)
+                       outlier_meta=top, carousel=getattr(args, "carousel", None),
+                       dry_run=args.dry_run, fresh=args.fresh)
 
 
 def cmd_inbox(args):
@@ -816,12 +844,13 @@ def cmd_inbox(args):
     store = DiscoveryStore()
     _extract_and_brief(args.url, store, persona=args.persona, brand=args.brand,
                        curated=True, acme_topic=args.topic, pillar=args.pillar,
+                       carousel=getattr(args, "carousel", None),
                        dry_run=args.dry_run, fresh=args.fresh)
 
 
 def _extract_and_brief(url, store, *, persona="P3", brand="labs", curated=False,
                        acme_topic=None, pillar="trending", outlier_meta=None,
-                       dry_run=False, fresh=False):
+                       carousel=None, dry_run=False, fresh=False):
     pattern = extract_pattern(url, fresh=fresh)
     if not pattern:
         log(f"extraction failed for {url}")
@@ -866,9 +895,9 @@ def _extract_and_brief(url, store, *, persona="P3", brand="labs", curated=False,
     prov = {"discovery_mode": "B_outlier"}
     jid = next_job_id()
     brief = assemble_brief("trending", recon["hook_angle"], persona=persona, brand=brand,
-                           template=recon["template"], job_id=jid, provenance=prov,
-                           reference=ref, fresh=fresh)
-    # Keep the brief.topic clean/human (the long copy.py angle lives in research.json).
+                           template=recon["template"], carousel=carousel, job_id=jid,
+                           provenance=prov, reference=ref, fresh=fresh)
+    # Keep the brief.topic clean/human (the long copywriter.py angle lives in research.json).
     brief_path = JOBS_DIR / jid / "brief.json"
     bj = json.loads(brief_path.read_text())
     bj["topic"] = topic
@@ -899,7 +928,7 @@ def main():
     pt.add_argument("--pillar", choices=list(PILLAR_PRESETS), help="Force a pillar (default: stack if compound else science)")
     pt.add_argument("--carousel", nargs="?", type=int, const=CAROUSEL_DEFAULT_SLIDES, metavar="N",
                     help="Assemble full N-slide carousels (carousel-dark, slides.json) instead of single cards. Default N=5.")
-    pt.add_argument("--dry-run", action="store_true", help="Score + select + print only; no copy.py, no briefs")
+    pt.add_argument("--dry-run", action="store_true", help="Score + select + print only; no copywriter.py, no briefs")
     pt.add_argument("--fresh", action="store_true", help="Bypass the API cache")
     pt.set_defaults(func=cmd_topics)
 
@@ -907,6 +936,9 @@ def main():
     po.add_argument("--query", help="YouTube niche query (default: built-in seed set)")
     po.add_argument("--num", type=int, default=15, help="Results per query (default 15)")
     po.add_argument("--extract", action="store_true", help="Also extract + clone the top outlier")
+    po.add_argument("--carousel", nargs="?", type=int, const=CAROUSEL_DEFAULT_SLIDES, metavar="N",
+                    help="Clone the outlier into a full N-slide carousel (better for comparison/"
+                         "listicle formats) instead of a single card. Default N=5.")
     po.add_argument("--dry-run", action="store_true", help="Extract + score only; no brief")
     po.add_argument("--fresh", action="store_true", help="Bypass the API cache")
     po.set_defaults(func=cmd_outliers)
@@ -917,6 +949,8 @@ def main():
     pi.add_argument("--persona", default="P3", choices=["P1", "P2", "P3"])
     pi.add_argument("--brand", default="labs", choices=["labs", "health"])
     pi.add_argument("--topic", help="Override the Acme topic to pour into the cloned format")
+    pi.add_argument("--carousel", nargs="?", type=int, const=CAROUSEL_DEFAULT_SLIDES, metavar="N",
+                    help="Clone the dropped link into a full N-slide carousel instead of a single card. Default N=5.")
     pi.add_argument("--dry-run", action="store_true", help="Extract + score only; no brief")
     pi.add_argument("--fresh", action="store_true", help="Bypass the API cache")
     pi.set_defaults(func=cmd_inbox)
@@ -931,6 +965,7 @@ def main():
         candidates=None, select=a.select, pillar=None, carousel=a.carousel,
         dry_run=a.dry_run, fresh=a.fresh)),
         cmd_outliers(argparse.Namespace(query=None, num=15, extract=True,
+                                        carousel=a.carousel,
                                         dry_run=a.dry_run, fresh=a.fresh))))
 
     args = ap.parse_args()

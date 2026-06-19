@@ -361,7 +361,7 @@ TIKTOK_DEFAULTS = {
 
 
 def cmd_publish(text, account_id, platform, media_urls, schedule, also, title,
-                privacy_level, dry_run, raw, api_key):
+                privacy_level, dry_run, raw, api_key, also_media=None):
     if not account_id:
         sys.exit("ERROR: --account-id required. Run `acme-blotato accounts` to get your account IDs.")
     if not platform:
@@ -376,7 +376,15 @@ def cmd_publish(text, account_id, platform, media_urls, schedule, also, title,
     if schedule:
         args["scheduledTime"] = schedule           # was "scheduleTime" — wrong key, scheduling silently no-op'd
     if also:                                        # thread (Twitter/Bluesky/Threads): each extra post
-        args["additionalPosts"] = [{"text": t} for t in also]
+        also_media = also_media or []               # index-paired with `also`; "" = no image for that post
+        posts = []
+        for i, t in enumerate(also):
+            post = {"text": t}
+            m = (also_media[i] if i < len(also_media) else "").strip()
+            if m:
+                post["mediaUrls"] = [u for u in m.split(",") if u]   # per-thread-post image(s)
+            posts.append(post)
+        args["additionalPosts"] = posts
     if platform == "tiktok":
         for k, v in TIKTOK_DEFAULTS.items():
             args.setdefault(k, v)
@@ -494,6 +502,9 @@ def main():
     p.add_argument("--platform", required=True, help="Platform: instagram, tiktok, linkedin, twitter, facebook, youtube, etc.")
     p.add_argument("--media-url", action="append", dest="media_urls", default=[], help="Public media URL (repeatable for multiple images / carousel)")
     p.add_argument("--also", action="append", default=[], help="Additional thread post text (repeatable; Twitter/Bluesky/Threads)")
+    p.add_argument("--also-media", action="append", default=[], dest="also_media",
+                   help="Media URL for the matching --also post (repeatable; index-paired with --also; "
+                        "comma-separate for multiple images; empty string = no image for that post).")
     p.add_argument("--schedule", help="Schedule time in ISO 8601 format (e.g. 2026-06-01T09:00:00Z). Omit to post immediately.")
     p.add_argument("--title", help="Title (required for YouTube; optional elsewhere)")
     p.add_argument("--privacy-level", dest="privacy_level",
@@ -530,7 +541,8 @@ def main():
         cmd_upload(args.file, args.raw, key)
     elif args.cmd == "publish":
         cmd_publish(args.text, args.account_id, args.platform, args.media_urls, args.schedule,
-                    args.also, args.title, args.privacy_level, args.dry_run, args.raw, key)
+                    args.also, args.title, args.privacy_level, args.dry_run, args.raw, key,
+                    also_media=args.also_media)
     elif args.cmd == "post-status":
         cmd_post_status(args.post_id, args.raw, key)
     elif args.cmd == "schedules":

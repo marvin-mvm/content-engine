@@ -146,7 +146,7 @@ def cmd_poll(args):
     offset = _read_offset()
     resp = requests.get(API.format(token=token, method="getUpdates"),
                         params={"offset": offset + 1, "timeout": 0, "allowed_updates": '["message"]'},
-                        timeout=40)
+                        timeout=40, verify=e.tls_verify())
     if resp.status_code != 200:
         sys.exit(f"getUpdates failed {resp.status_code}: {resp.text[:200]}")
     updates = resp.json().get("result", [])

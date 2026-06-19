@@ -9,7 +9,7 @@
       "Bash(python3 post.py:*)",
       "Bash(python3 reel.py:*)",
       "Bash(python3 research.py:*)",
-      "Bash(python3 copy.py:*)",
+      "Bash(python3 copywriter.py:*)",
       "Bash(python3 preflight.py:*)",
       "Bash(python3 engine.py:*)",
       "Bash(python3 blotato.py:*)",

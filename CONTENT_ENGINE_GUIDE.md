@@ -24,7 +24,7 @@
 |---|---|---|
 | **Creatomate** (visuals) | **HyperFrames + produce.py + Higgsfield** (M3–M5) | Our core renders brand-correct assets with synced captions Creatomate can't match. The point of the migration. |
 | **Trigger.dev** (orchestration) | **Claude Code + macOS launchd** (F4) | A cloud runner can't call our local Higgsfield CLI / ffmpeg / HyperFrames / Playwright. The visual stage is local-only by necessity. |
-| **Claude API direct** (Sonnet 4.5/4.6) | **OpenRouter** via `copy.py` | Same models, already wired + brand-voice/compliance enforced. |
+| **Claude API direct** (Sonnet 4.5/4.6) | **OpenRouter** via `copywriter.py` | Same models, already wired + brand-voice/compliance enforced. |
 | **Supabase** (8 tables + storage) | **Supabase** ✅ adopted (system-of-record) | Right tool for the relational scoring/feedback work. *Provisioning still pending.* |
 | **Blotato** (publish) | **Blotato** ✅ via `publish.py` (F1, built) | Same tool, wrapped with a hard compliance gate. |
 | **Apify / SearchAPI** | **apify.py / searchapi.py** ✅ + **firecrawl.py** added | Same approach; firecrawl added for full article scrapes. |
@@ -145,7 +145,7 @@ via Telegram.
 | 5 | The Community — what members achieve | Community results, case studies | Member testimonials |
 | 6 | The System — the full Acme method | Full stack curriculum | Annual program launch |
 
-### 3.4 Platform rules (enforced in `copy.py --platform`, SOUL §6)
+### 3.4 Platform rules (enforced in `copywriter.py --platform`, SOUL §6)
 - **Instagram** — carousels 5–10 slides (slide 1 hook, last CTA); reels 15–45s, hook in 2s, text on screen; caption = hook + 2–3 short paragraphs + CTA + 20–30 hashtags; reshare to Stories within 1h; bio link → acmehealth.co or acmelabs.co by content type.
 - **TikTok** — same video, TikTok-native (no watermark), 3–5 targeted hashtags, text hook on first frame.
 - **X/Twitter** — quote cards + strong opinion only (not all 5); thread for Science (each carousel slide → a tweet); **0 hashtags**; reply-engage within 2h.
@@ -161,7 +161,7 @@ via Telegram.
 | Database | Supabase ($25) | **Supabase** ✅ |
 | Social scraping | Apify ($50–100) | **apify.py** ✅ |
 | Trend intel | SearchAPI ($50) | **searchapi.py** ✅ (+ **firecrawl.py**) |
-| AI generation | Claude API Sonnet ($50–150) | **OpenRouter** via `copy.py` |
+| AI generation | Claude API Sonnet ($50–150) | **OpenRouter** via `copywriter.py` |
 | Visual production | Creatomate ($39–99) | **HyperFrames + produce.py + Higgsfield** |
 | Publishing | Blotato (active) | **publish.py → Blotato** ✅ |
 | Review gate | Telegram bot (free) | **Telegram** (F2, last) |
@@ -179,7 +179,7 @@ credits as a managed lever; OpenRouter instead of Anthropic-direct.)
 |---|---|---|---|---|
 | **1 · DISCOVER** | 06:00 | `research.py` sweep (apify/searchapi/firecrawl): viral-outlier mining + topic discovery | `discovery_queue` | **F3 — next** |
 | **2 · SCORE & SELECT** | 06:30 | `research.py` scoring → top 5 (one/pillar) → `brief.json` files | `daily_brief` | **F3 — next** |
-| **3 · GENERATE** | 07:00 | `copy.py` (caption + overlay tokens + hashtags + platform variants) | `content_drafts` | copy.py ✅; per-job M2 |
+| **3 · GENERATE** | 07:00 | `copywriter.py` (caption + overlay tokens + hashtags + platform variants) | `content_drafts` | copywriter.py ✅; per-job M2 |
 | **4 · TELEGRAM REVIEW** | 08:00 | `telegram.py` + `approvals.py` (A/R/E) | `approved_drafts` / `content_drafts.status` | **F2 — last** |
 | **5 · PRODUCE VISUALS** | post-approval | `produce.py`/`reel.py`/`post.py` + HyperFrames (**not Creatomate**) | `ready_to_publish` | ✅ built (A1–A5) |
 | **6 · SCHEDULE & PUBLISH** | staggered | `publish.py` → Blotato (per §3.1 routing) | `published_posts` | ✅ **F1 built** |
@@ -233,7 +233,7 @@ separate from `content_drafts`. We may fold approval into `content_drafts.status
 | Devon's week / task | Our phase | Status |
 |---|---|---|
 | **W1** — Supabase tables · Apify hashtag + saved-IG scrapers · SearchAPI Reddit/X · wire to `discovery_queue` | Data layer + **F3** | ⬜ next (Supabase pending; saved-IG → drop-a-link) |
-| **W2** — Stage 2 scoring · Stage 3 generation · Telegram bot + Stage 4 review · test 1–4 | M1–M2 (`research.py`/`copy.py`) ✅ partial · **F2** Telegram ⬜ | partial |
+| **W2** — Stage 2 scoring · Stage 3 generation · Telegram bot + Stage 4 review · test 1–4 | M1–M2 (`research.py`/`copywriter.py`) ✅ partial · **F2** Telegram ⬜ | partial |
 | **W3** — 5 brand templates · Stage 5 production · confirm Blotato 4 platforms · Stage 6 publish · first test week | A1–A6 ✅ (HyperFrames, **not Creatomate**) · **F1** ✅ | **done** (templates exist; Blotato = X/TikTok now, Meta pending) |
 | **W4** — Apify post-publish scraper · Stage 8 feedback · wire weights into scoring · weekly report · dashboard · go-live | **F5** ⬜ · Supabase Studio (no React app) | ⬜ later |
 
@@ -273,7 +273,7 @@ composite 1–10 vs pillar benchmark.
 
 ## 9. Compliance — non-negotiable (hardcoded + manually checked)
 
-Full hard-rules in **[SOUL.md](SOUL.md) §12/§21**; `copy.py` + `publish.py` enforce them.
+Full hard-rules in **[SOUL.md](SOUL.md) §12/§21**; `copywriter.py` + `publish.py` enforce them.
 
 **All content (Labs + Health):** never "treats / cures / heals / fixes / prevents / proven to /
 guaranteed"; educational framing only ("research suggests", "studies indicate", "protocols used
@@ -281,7 +281,7 @@ by"); no medical before/after; no specific patient outcomes unless anonymous/non
 never target under-18s. **Never imply a physician acting for Acme** (our override — §0).
 
 **Acme Labs:** caption footer **"For research use only — not for human consumption."** (canonical
-in `copy.py` = `RUO · NOT FOR HUMAN CONSUMPTION`); **organic only, NEVER paid**; no human-use
+in `copywriter.py` = `RUO · NOT FOR HUMAN CONSUMPTION`); **organic only, NEVER paid**; no human-use
 implication; no influencer/celebrity use claims; no weight-loss/condition targeting.
 
 **Acme Health:** physician-*oversight* framing where applicable (never naming an Acme

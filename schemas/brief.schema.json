@@ -49,6 +49,7 @@
     "script": { "type": "string", "description": "Optional: exact voiceover/spoken script (used to reconcile Whisper mishears)." },
     "compound": { "type": "string" },
     "class": { "type": "string" },
+    "link": { "type": "string", "format": "uri", "description": "Owned-site product/COA destination for a LIVE SKU (e.g. https://acmelabs.co/shop/epithalon-20mg). The caption bridge folds this into every platform caption so the card's 'VIEW COA' CTA resolves to a real page. Absent for non-live compounds." },
     "product_feature": { "type": "boolean", "default": false },
     "reference": {
       "type": "object",
