@@ -30,7 +30,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import engine as e
@@ -40,6 +40,7 @@ PUBLISH = str(e.WORKSPACE / "publish.py")
 APPROVALS = str(e.WORKSPACE / "approvals.py")
 
 PUBLISH_PLATFORMS = "x,tiktok"           # the connected live channels (RUNBOOK §11.5)
+CARRYOVER_HOURS = 48                     # safety-sweep horizon for stranded approvals
 
 
 def infer_slot(now: datetime | None = None) -> str | None:
@@ -48,6 +49,63 @@ def infer_slot(now: datetime | None = None) -> str | None:
     hhmm = now.strftime("%H:%M")
     due = [s for s in e.SLOTS if s <= hhmm]
     return due[-1] if due else None
+
+
+def _reviewed_within(st: dict, cutoff: datetime) -> bool:
+    """True if the job's approval timestamp is at/after cutoff (recency bound on the sweep)."""
+    rv = st.get("reviewed_at")
+    if not rv:
+        return False
+    try:
+        t = datetime.strptime(rv, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        try:
+            t = datetime.fromisoformat(rv.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return False
+    return t >= cutoff
+
+
+def _is_due(jslot: str | None, jdate: str | None, firing_slot: str, today: str) -> bool:
+    """Is an approved job due to post at `firing_slot` on `today`?
+      • carried over from a prior day (slot_date < today) → overdue, post now
+      • no slot at all (orphan)                           → post now
+      • scheduled for a future day (slot_date > today)    → not yet
+      • today: due once its own slot time has arrived (slot <= firing_slot)"""
+    if jdate and jdate < today:
+        return True
+    if not jslot:
+        return True
+    if jdate and jdate > today:
+        return False
+    return jslot <= firing_slot
+
+
+def collect_due(date: str, slot: str) -> list[dict]:
+    """Jobs to publish at this slot: the manifest's entries for the slot, PLUS a safety
+    sweep of any APPROVED + un-published image job the manifest missed (manual push,
+    produced-but-un-manifested, or approved after its own slot/day). Recency-bounded to
+    CARRYOVER_HOURS so stale approvals aren't resurrected; reels are excluded (out of the
+    auto-publish loop). Dedup by job_id; already-published jobs are skipped in main()."""
+    man = e.read_manifest(date)
+    due: dict[str, dict] = {j["job_id"]: j for j in man["jobs"] if j.get("slot") == slot}
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=CARRYOVER_HOURS)
+    for jd in sorted(e.JOBS_DIR.glob("ACME-*")):
+        jid = jd.name
+        if jid in due:
+            continue
+        st = e.read_status(jid) or {}
+        if st.get("status") != "approved" or not _reviewed_within(st, cutoff):
+            continue
+        brief = e.load_json(jd / "brief.json") or {}
+        if brief.get("type") == "reel":
+            continue
+        if _is_due(st.get("slot"), st.get("slot_date"), slot, date):
+            due[jid] = {"job_id": jid, "slot": st.get("slot") or slot}
+            e.log(f"safety-sweep: {jid} is approved + due but absent from the {slot} manifest "
+                  f"list — including it so it isn't stranded (no silent drop).")
+    return list(due.values())
 
 
 def drain_approvals():
@@ -106,10 +164,9 @@ def main():
     if not args.no_poll:
         drain_approvals()
 
-    man = e.read_manifest(date)
-    due = [j for j in man["jobs"] if j.get("slot") == slot]
+    due = collect_due(date, slot)
     if not due:
-        e.log(f"no jobs assigned to slot {slot} on {date}.")
+        e.log(f"no jobs due at slot {slot} on {date}.")
         return
 
     published = held = failed = 0

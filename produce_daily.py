@@ -15,15 +15,17 @@ without this step every non-product Labs post would be blocked at publish. We ge
 shaped caption per platform, force RUO on all Labs captions, strip hashtags + fit X to
 ≤280 (the publish gate's hard X rule), and write captions.json the gate will accept.
 
-SCOPE: carousels + static images ONLY. Video reels are EXCLUDED from the auto loop (they
-cost Higgsfield credits + need hand-authored caption beats). research.py only ever emits
-type=image briefs, but we defensively skip anything type=reel.
+SCOPE: images/carousels run end-to-end here (0 credits). REELS (F7) are also handled, but as
+a STATUS-DRIVEN state machine that puts GATE 1 (concept approval) BEFORE the only credit
+spend (RV3): PHASE A = script -> captions -> push concept; [human approves]; PHASE B = RV3
+b-roll (dry-run unless REELS_LIVE + --generate-reels) -> RV4 captions -> push final (GATE 2).
 
-Each job ends pending review (status=produced); NO qc.json yet — that is written only on
-Telegram APPROVE (approvals.py). Spend-capped + STOP-flag honored via engine.py.
+Each job ends pending review (status=produced / awaiting_concept / pushed); NO qc.json yet —
+that is written only on Telegram APPROVE (approvals.py). Spend-capped + STOP-flag honored.
 
 Subcommands:
-    run [--posts N] [--no-carousel] [--dry-run] [--force]   full morning produce
+    run [--posts N] [--no-carousel] [--dry-run] [--force] [--generate-reels]   full morning produce
+    reel <job_dir> [--generate] [--dry-run-push] [--force]  advance ONE reel through its phases
     captions <job_dir> [--force]                            (re)build captions.json only (the bridge)
     enqueue <job_id ...>                                    add existing jobs to today's manifest
 """
@@ -42,6 +44,11 @@ PY = sys.executable or "python3"
 RESEARCH = str(e.WORKSPACE / "research.py")
 POST = str(e.WORKSPACE / "post.py")
 COPY = str(e.WORKSPACE / "copywriter.py")
+# F7 reel pipeline tools (script -> GATE 1 -> video -> captions -> GATE 2).
+SCRIPT = str(e.WORKSPACE / "script.py")
+REEL_VIDEO = str(e.WORKSPACE / "reel_video.py")
+REEL_CAPTIONS = str(e.WORKSPACE / "reel_captions.py")
+TELEGRAM = str(e.WORKSPACE / "telegram.py")
 
 # captions.json always carries the live publish channels (x, tiktok) + instagram; any
 # extra platform named in the brief (threads/facebook) is appended. Canonical order.
@@ -150,9 +157,7 @@ def build_captions(job_dir: Path, force: bool = False) -> dict | None:
     if not isinstance(brief, dict):
         e.log(f"{job_dir.name}: no/invalid brief.json — cannot build captions")
         return None
-    if brief.get("type") == "reel":
-        e.log(f"{job_dir.name}: type=reel is excluded from the auto loop — skipping")
-        return None
+    is_reel = brief.get("type") == "reel"
 
     out_path = job_dir / "captions.json"
     if out_path.exists() and not force:
@@ -161,11 +166,15 @@ def build_captions(job_dir: Path, force: bool = False) -> dict | None:
 
     brand = brief.get("brand", "labs")
     topic = brief.get("topic", "")
-    # Live channels first, then any extra brief platform (threads/facebook).
-    platforms = list(CAPTION_PLATFORMS)
-    for p in brief.get("platforms", []):
-        if p not in platforms:
-            platforms.append(p)
+    # Reels carry their fixed video distribution (tiktok/x/youtube) — no instagram default,
+    # no carousel/X-thread. Images use the live-channel default set + any extra brief platform.
+    if is_reel:
+        platforms = list(brief.get("platforms", ["tiktok", "x", "youtube"]))
+    else:
+        platforms = list(CAPTION_PLATFORMS)
+        for p in brief.get("platforms", []):
+            if p not in platforms:
+                platforms.append(p)
 
     # Product/COA link (live SKU only) → folded into every caption so the card's "VIEW COA"
     # CTA resolves to a real page on every platform. None for non-live compounds.
@@ -266,7 +275,121 @@ def package_job(job_dir: Path, pillar: str, brand: str, slot: str | None,
     return False
 
 
+# ── F7 reel pipeline (status-driven; GATE 1 always precedes the RV3 credit spend) ──
+def _sub(cmd):
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    sys.stderr.write(r.stderr)
+    return r
+
+
+def handle_reel(job_dir: Path, *, generate: bool = False, dry_run_push: bool = False,
+                force: bool = False) -> str | None:
+    """Advance ONE type=reel job through its phases, driven by status:
+
+      PHASE A (pre-credit): RV2 script.py -> captions.json -> push CONCEPT (GATE 1) -> awaiting_concept
+      [human concept-approves in Telegram -> concept_qc.json, status concept_approved]
+      PHASE B (post-approval): RV3 reel_video.py (the credit spend, dry-run unless REELS_LIVE
+        + generate) -> RV4 reel_captions.py -> captions.json -> push FINAL (GATE 2) -> pushed
+
+    The RV3 spend is ALWAYS behind GATE 1 (concept_qc) AND the engine 2/day cap, and only
+    actually fires when both `generate` and engine.reels_live() are set — otherwise RV3 runs
+    DRY-RUN (0 credits) and the reel parks at concept_approved until generation is enabled."""
+    job_id = job_dir.name
+    brief = e.load_json(job_dir / "brief.json") or {}
+    if brief.get("type") != "reel":
+        return None
+    pillar, brand = brief.get("pillar", ""), brief.get("brand", "labs")
+    st = (e.read_status(job_id) or {}).get("status")
+    concept_ok = (e.load_json(job_dir / "concept_qc.json") or {}).get("passed") is True
+
+    # Waiting / terminal states the loop must not disturb.
+    if st in ("awaiting_concept", "pushed", "approved", "published",
+              "concept_rejected", "concept_held", "rejected", "held", "failed"):
+        e.log(f"{job_id}: reel waiting at status={st} — no action")
+        return st
+
+    # ── PHASE B — concept approved → generate → caption → final review ──
+    if concept_ok or st == "concept_approved":
+        side = e.load_json(job_dir / "reel_video.json") or {}
+        if not brief.get("video"):
+            if side.get("status") == "pending":            # async Seedance job in flight → poll
+                e.log(f"{job_id}: polling the pending Seedance job…")
+                _sub([PY, REEL_VIDEO, str(job_dir), "--poll"])
+            else:
+                cmd = [PY, REEL_VIDEO, str(job_dir)]
+                if generate and e.reels_live():
+                    cmd.append("--go")
+                    e.log(f"{job_id}: RV3 — REELS_LIVE on → may spend 1 reel credit (gated by cap + concept)")
+                else:
+                    e.log(f"{job_id}: concept approved → RV3 DRY-RUN (REELS_LIVE off / no --generate); 0 credits")
+                _sub(cmd)
+            brief = e.load_json(job_dir / "brief.json") or {}
+            if not brief.get("video"):                     # dry-run / still rendering → resume next run
+                e.log(f"{job_id}: no b-roll yet (dry-run or pending) — will resume next run")
+                return st
+        final = job_dir / f"{job_id}-final.mp4"
+        if not final.exists() and not (job_dir / "captioned.mp4").exists():
+            e.log(f"{job_id}: RV4 — TTS voiceover + synced captions + render")
+            if _sub([PY, REEL_CAPTIONS, str(job_dir)]).returncode != 0:
+                e.log(f"{job_id}: RV4 failed (TTS/render run on the real machine) — stopping")
+                return st
+        build_captions(job_dir, force=force)
+        _sub([PY, TELEGRAM, "push", str(job_dir)] + (["--dry-run"] if dry_run_push else []))
+        if not dry_run_push:
+            e.write_status(job_id, "pushed", pillar=pillar, brand=brand,
+                           slot=e.PILLAR_SLOT.get(pillar), slot_date=e.today_pt(),
+                           pushed_at=e.now_iso())
+        e.log(f"{job_id}: reel rendered → GATE 2 (final review)")
+        return "pushed"
+
+    # ── PHASE A — pre-concept: script + captions + concept review (GATE 1) ──
+    if not brief.get("script"):
+        e.log(f"{job_id}: RV2 — writing the spoken script")
+        if _sub([PY, SCRIPT, str(job_dir)]).returncode != 0:
+            e.log(f"{job_id}: RV2 blocked (likely a RED concept) — marking failed, no credit at risk")
+            e.write_status(job_id, "failed", pillar=pillar, brand=brand, note="script compliance-blocked")
+            return "failed"
+    build_captions(job_dir, force=force)
+    if _sub([PY, TELEGRAM, "push-concept", str(job_dir)] + (["--dry-run"] if dry_run_push else [])).returncode != 0:
+        e.log(f"{job_id}: concept push failed")
+        return st
+    if not dry_run_push:
+        e.write_status(job_id, "awaiting_concept", pillar=pillar, brand=brand,
+                       slot=e.PILLAR_SLOT.get(pillar), slot_date=e.today_pt(),
+                       concept_pushed_at=e.now_iso())
+    e.log(f"{job_id}: concept → GATE 1 (awaiting approval; NO credit spent)")
+    return "awaiting_concept"
+
+
+def sweep_reels(*, generate: bool = False, dry_run_push: bool = False, force: bool = False) -> list[str]:
+    """Advance every reel job that isn't in a waiting/terminal state (the loop's reel pass)."""
+    advanced = []
+    for jd in sorted(e.JOBS_DIR.glob("ACME-*")):
+        brief = e.load_json(jd / "brief.json")
+        if not isinstance(brief, dict) or brief.get("type") != "reel":
+            continue
+        st = (e.read_status(jd.name) or {}).get("status")
+        concept_ok = (e.load_json(jd / "concept_qc.json") or {}).get("passed") is True
+        if st in ("awaiting_concept", "pushed", "approved", "published",
+                  "concept_rejected", "concept_held", "rejected", "held", "failed") and not (
+                concept_ok and st == "awaiting_concept"):
+            continue
+        if handle_reel(jd, generate=generate, dry_run_push=dry_run_push, force=force):
+            advanced.append(jd.name)
+    return advanced
+
+
 # ── subcommands ────────────────────────────────────────────────────────────────
+def cmd_reel(args):
+    e.assert_running("produce-reel")
+    job_dir = Path(args.job_dir).resolve()
+    if not (job_dir / "brief.json").exists():
+        sys.exit(f"no brief.json in {job_dir}")
+    status = handle_reel(job_dir, generate=args.generate, dry_run_push=args.dry_run_push,
+                         force=args.force)
+    e.log(f"{job_dir.name}: reel advanced -> status={status}")
+
+
 def cmd_run(args):
     e.assert_running("produce")
     date = e.today_pt()
@@ -299,6 +422,13 @@ def cmd_run(args):
     if args.dry_run:
         e.log("DRY-RUN: research scored/printed; no render, no captions, no manifest.")
         return
+
+    # F7 reels: advance every non-terminal reel through its phases (GATE 1 before any RV3
+    # credit spend). New reels (research --reel / bank --format reel) enter at PHASE A;
+    # concept-approved reels move to PHASE B. RV3 only SPENDS with --generate-reels + REELS_LIVE.
+    advanced = sweep_reels(generate=args.generate_reels)
+    if advanced:
+        e.log(f"reels advanced: {advanced}")
 
     # Collect the new image briefs.
     jobs = []
@@ -390,7 +520,18 @@ def main():
     pr.add_argument("--dry-run", action="store_true", help="Score/print only; no render/captions/manifest")
     pr.add_argument("--fresh", action="store_true", help="Bypass research's API cache")
     pr.add_argument("--force", action="store_true", help="Rebuild captions even if present")
+    pr.add_argument("--generate-reels", action="store_true",
+                    help="Let concept-approved reels SPEND on RV3 generation (still needs REELS_LIVE "
+                         "+ a per-reel concept approval + the 2/day cap). Default: RV3 dry-run, 0 credits.")
     pr.set_defaults(carousel=True, func=cmd_run)
+
+    prl = sub.add_parser("reel", help="F7: advance ONE reel through its phases (RV2 -> GATE 1 -> RV3 -> RV4 -> GATE 2)")
+    prl.add_argument("job_dir")
+    prl.add_argument("--generate", action="store_true",
+                     help="Allow the RV3 credit spend (also needs REELS_LIVE + concept approval + cap)")
+    prl.add_argument("--dry-run-push", action="store_true", help="Print the Telegram card; don't send / don't change status")
+    prl.add_argument("--force", action="store_true", help="Rebuild captions even if present")
+    prl.set_defaults(func=cmd_reel)
 
     pc = sub.add_parser("captions", help="(Re)build captions.json for ONE existing job (the bridge alone)")
     pc.add_argument("job_dir")

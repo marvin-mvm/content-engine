@@ -55,9 +55,11 @@ PILLAR_SLOT = {                         # mirrors research.py PILLAR_PRESETS["sl
 # ── spend caps (per-day ceilings; Marvin-confirmed 2026-06-18) ─────────────────
 # Each is a hard daily ceiling; the loop refuses the call that would exceed it.
 # Overridable via .env (ENGINE_CAP_COPY / ENGINE_CAP_SEARCHAPI / ENGINE_CAP_APIFY / ENGINE_CAP_REEL).
-# `reel` is the ONLY Higgsfield-credit-bearing cap: a HARD 2 reels/day ceiling (1 typical),
-# Marvin 2026-06-18 — reel_video.py (F7 RV3) spends it just before a Seedance generation.
-DEFAULT_CAPS = {"copy": 30, "searchapi": 20, "apify": 3, "reel": 2}
+# `reel` is the ONLY Higgsfield-credit-bearing cap, and it now counts CREDITS, not reels:
+# a reel stitches several Seedance b-roll CLIPS (Marvin 2026-06-19: 3×10s ≈ 30s, no looping),
+# and reel_video.py (F7 RV3) spends ONE credit per clip just before each generation. A HARD
+# 6 credits/day ceiling ≈ 2 premium reels/day at 3 clips each (Marvin 2026-06-19).
+DEFAULT_CAPS = {"copy": 30, "searchapi": 20, "apify": 3, "reel": 6}
 
 # ── compliance — SINGLE SOURCE OF TRUTH is compliance.py (Red/Yellow/Green framework).
 #    Re-exported so existing callers keep working: e.BANNED / e.RUO_SENTENCE / e.RUO_RE,
@@ -134,6 +136,17 @@ def go_live() -> bool:
     return GO_LIVE_FILE.exists()
 
 
+REELS_LIVE_FILE = OUTPUT / "REELS_LIVE"  # touch to let the loop SPEND on reel generation (F7)
+
+
+def reels_live() -> bool:
+    """Autonomous reel GENERATION (the only Higgsfield-credit spend) is enabled only when the
+    REELS_LIVE flag exists (Marvin's one-file switch, independent of GO_LIVE/publishing).
+    Absent ⇒ the loop dry-runs RV3 (builds prompt + preflight + gates, spends NOTHING). A
+    concept must STILL be approved per reel (GATE 1) and the 6 credits/day cap still applies."""
+    return REELS_LIVE_FILE.exists() or (load_env("ENGINE_REELS_LIVE") or "").strip() == "1"
+
+
 def compliance_hold() -> bool:
     """SOUL §16: a live compliance issue sets a hold; only the owner releases it
     (RESUME PUBLISHING). While held, publishing must stop."""
@@ -190,7 +203,7 @@ def spend(kind: str, n: int = 1, date: str | None = None) -> bool:
 
 
 # ── per-job status (engine bookkeeping; brief.json is left untouched) ────────────
-VALID_STATUS = {"produced", "pushed", "approved", "rejected", "revise",
+VALID_STATUS = {"produced", "pushed", "approved", "scheduled", "rejected", "revise",
                 "published", "held", "failed",
                 # F7 reel concept gate (GATE 1, pre-credit)
                 "awaiting_concept", "concept_approved", "concept_rejected",
@@ -275,6 +288,120 @@ def assign_slots(jobs: list[dict]) -> list[dict]:
             j["slot"] = free[fi]
             taken.add(free[fi])
             fi += 1
+    return out
+
+
+def ensure_slotted_in_manifest(job_id: str, date: str | None = None) -> str | None:
+    """Backstop the publish invariant: a publishable job MUST have a PT slot AND a
+    manifest entry, or publish_slot.py can never select it. produce_daily stamps both at
+    produce time; this re-asserts them for any job that reached approval out-of-band (a
+    manual `telegram.py push`, or produced-but-un-manifested) so a sign-off can never
+    silently strand a post. Image jobs only — reels are out of the auto-publish loop.
+    Returns the job's slot (existing or newly assigned), or None if it can't be slotted."""
+    date = date or today_pt()
+    brief = load_json(JOBS_DIR / job_id / "brief.json") or {}
+    if brief.get("type") == "reel":
+        return None                                  # reels publish via their own path
+    st = read_status(job_id) or {"job_id": job_id, "history": []}
+    man = read_manifest(date)
+    jobs = man.get("jobs", [])
+    entry = next((j for j in jobs if j.get("job_id") == job_id), None)
+    slot = st.get("slot") or (entry.get("slot") if entry else None)
+
+    if slot and entry and entry.get("slot") == slot:
+        return slot                                  # already coherent — nothing to heal
+
+    pillar = st.get("pillar") or brief.get("pillar", "")
+    brand = st.get("brand") or brief.get("brand", "labs")
+    if not slot:                                     # pick a slot: pillar's natural, else first free
+        taken = {j.get("slot") for j in jobs if j.get("job_id") != job_id and j.get("slot")}
+        want = PILLAR_SLOT.get(pillar)
+        slot = want if (want and want not in taken) else next((s for s in SLOTS if s not in taken), None)
+        if not slot:
+            log(f"{job_id}: cannot self-heal slot — all {len(SLOTS)} slots taken on {date}.")
+
+    if slot and st.get("slot") != slot:              # stamp slot on status (no history event)
+        st["slot"] = slot
+        st["slot_date"] = date
+        status_path(job_id).write_text(json.dumps(st, ensure_ascii=False, indent=2))
+
+    if entry is None:                                # ensure the manifest carries it at that slot
+        jobs.append({"job_id": job_id, "pillar": pillar, "brand": brand, "slot": slot})
+    else:
+        entry["slot"] = slot
+        entry.setdefault("pillar", pillar)
+        entry.setdefault("brand", brand)
+    write_manifest(jobs, date)
+    return slot
+
+
+# ── decision ledger (the Sheets-style A/R/E record — learn from approved vs rejected) ──
+# Append-only JSONL: one human decision per line, with a snapshot of the CONTENT it judged
+# (topic/angle, the script + generation prompts, the caption, slide copy). This is the
+# durable corpus that lets the system learn which prompts/scripts get approved vs rejected.
+# Lives under output/ (gitignored, runtime data — the local successor to the old Sheets log).
+DECISIONS_LOG = ENGINE_DIR / "decisions.jsonl"
+
+
+def _decision_snapshot(job_id: str) -> dict:
+    """Pull the content worth keeping for the learning corpus from a job's folder: the
+    brief's topic/angle, any script + generation prompts (reels / generated images), the X
+    caption, and slide copy. Best-effort; only non-empty fields are kept."""
+    jd = JOBS_DIR / job_id
+    brief = load_json(jd / "brief.json") or {}
+    ref = brief.get("reference") or {}
+    snap = {
+        "type": brief.get("type"), "brand": brief.get("brand"), "pillar": brief.get("pillar"),
+        "topic": brief.get("topic"), "compound": brief.get("compound"),
+        "description": ref.get("description"),
+        "hook": ref.get("extracted_hook"),
+        "format": ref.get("cloned_format") or (ref.get("scoring_breakdown") or {}).get("format"),
+        "script": brief.get("script"),
+        # generation prompts, under whatever key the pipeline used (reel b-roll, image bg)
+        "video_prompts": brief.get("video_prompts") or brief.get("broll_prompts") or brief.get("clips"),
+        "bg_prompt": (brief.get("image") or {}).get("bg_prompt"),
+    }
+    caps = load_json(jd / "captions.json")
+    if isinstance(caps, dict):
+        x = caps.get("x")
+        snap["caption_x"] = x.get("text") if isinstance(x, dict) else x
+    slides = load_json(jd / "slides.json")
+    if isinstance(slides, list):
+        snap["slides"] = [
+            " / ".join(str(s[k]) for k in ("HEAD_1", "HEAD_2_ITALIC", "HEAD_3", "BODY") if s.get(k))
+            for s in slides if isinstance(s, dict)
+        ] or None
+    return {k: v for k, v in snap.items() if v not in (None, "", [])}
+
+
+def record_decision(job_id: str, verb: str, gate: str, who: str, note: str | None) -> None:
+    """Append ONE human A/R/E decision (approve/revise/reject/hold) to the decision ledger,
+    with a snapshot of the content it judged. Append-only; never rewritten. Best-effort —
+    a logging failure must NEVER break the approval path."""
+    try:
+        ENGINE_DIR.mkdir(parents=True, exist_ok=True)
+        rec = {"at": now_iso(), "job_id": job_id, "verb": verb.lower(), "gate": gate,
+               "who": who, "note": note or None, "content": _decision_snapshot(job_id)}
+        with (ENGINE_DIR / "decisions.jsonl").open("a", encoding="utf-8") as f:  # call-time path: follows a redirected ENGINE_DIR (test isolation)
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception as ex:                                  # pragma: no cover
+        log(f"decision-log skipped (non-fatal) for {job_id} {verb}: {ex}")
+
+
+def read_decisions() -> list[dict]:
+    """Every decision ever recorded (oldest→newest). Tolerates a partially-written tail line."""
+    path = ENGINE_DIR / "decisions.jsonl"
+    if not path.exists():
+        return []
+    out = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
     return out
 
 

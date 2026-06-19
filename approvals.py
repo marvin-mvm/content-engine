@@ -84,8 +84,13 @@ def _apply_concept(verb: str, job_id: str, note: str, who: str, reply: bool, job
                                   ensure_ascii=False, indent=2))
         e.write_status(job_id, "concept_approved", reviewed_at=e.now_iso(),
                        reviewed_by=who, review_note=note or None)
+        try:
+            n_clips = int(e.load_env("ENGINE_REEL_CLIPS") or 3)
+        except (ValueError, TypeError):
+            n_clips = 3
         msg = (f"🎬 {job_id} concept approved by {who} — cleared to generate the reel "
-               f"(~1 Higgsfield credit). Final review still required before publish.")
+               f"(~{n_clips} Higgsfield credits, {n_clips} stitched b-roll clips). "
+               "Final review still required before publish.")
     elif verb == "REJECT":
         cqc.unlink(missing_ok=True)
         e.write_status(job_id, "concept_rejected", reviewed_at=e.now_iso(),
@@ -102,6 +107,8 @@ def _apply_concept(verb: str, job_id: str, note: str, who: str, reply: bool, job
         e.write_status(job_id, "concept_held", reviewed_at=e.now_iso(), reviewed_by=who,
                        review_note=note or "concept held")
         msg = f"⏸ {job_id} concept held by {who} — no credit spent; defers."
+    # Record the concept-gate decision (script + generation prompts) in the learning ledger.
+    e.record_decision(job_id, verb, "concept", who, note)
     e.log(msg)
     if reply:
         tg.send_text(msg, dry_run=False)
@@ -137,8 +144,13 @@ def apply_command(verb: str, job_id: str, note: str, who: str = "telegram",
                                  clean=not revised)
         e.write_status(job_id, "approved", reviewed_at=e.now_iso(),
                        reviewed_by=who, review_note=note or None)
+        # Backstop the publish invariant: a job approved out-of-band (e.g. a manual push)
+        # can arrive with no slot / no manifest entry, and publish_slot.py selects by slot —
+        # so an unslotted approval would silently never post. Heal it here so a sign-off can
+        # never strand a post (no-op for the normal produce_daily path, which slots at produce).
+        slot = e.ensure_slotted_in_manifest(job_id)
         st = e.read_status(job_id) or {}
-        msg = (f"✅ {job_id} approved by {who} — queued for its {st.get('slot', '?')} PT slot"
+        msg = (f"✅ {job_id} approved by {who} — queued for its {slot or st.get('slot') or '?'} PT slot"
                + (f" (trust → {ev['score']})." if ev else "."))
     elif verb == "REJECT":
         qc.unlink(missing_ok=True)
@@ -161,6 +173,9 @@ def apply_command(verb: str, job_id: str, note: str, who: str = "telegram",
     else:
         msg = f"⚠️ {job_id}: unrecognized command {verb!r}."
 
+    # Record the final-gate decision (caption + slide copy + any prompts) in the learning ledger.
+    if verb in ("APPROVE", "REJECT", "REVISE", "HOLD"):
+        e.record_decision(job_id, verb, "final", who, note)
     e.log(msg)
     if reply:
         tg.send_text(msg, dry_run=False)

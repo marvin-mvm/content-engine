@@ -220,7 +220,36 @@ These build on the Content Generation Module's job-folder output. None are start
 | F4 | **Scheduling** ✅ built | **pure-Python launchd** (NOT headless `claude -p` — Marvin's call 2026-06-18: the only LLM cost stays `copywriter.py`, zero agent tokens): 4 jobs in `launchd/` — `produce` 05:30 → `review` 07:00 → `approvals` poll every 5m → `publish` at 08:00/11:00/13:00/16:00/19:00 PT (each slot publishes its own approved jobs). `install.sh` (un)loads them; permissions allowlist in `.claude/settings.json`. | 🟢 Easy (after F1–F3) | **BUILT 2026-06-18** (0 credits). Orchestrators: `produce_daily.py` (the `copy.json`→`captions.json` **bridge** + RUO on every Labs caption + X-fit) · `publish_slot.py` (slot inference, never double-posts, SOUL §19). **Supervised**: publish stays dry-run until `output/GO_LIVE`; `output/STOP` kill-switch; per-day caps (copy 30 / searchapi 20 / apify 3). 23:00 measure + Mon analytics are F5-era. Cloud `/schedule` unsuitable (local creds). Recipe: PIPELINE_RUNBOOK §14. |
 | F5 | **Feedback loop (lite)** | Weekly weighted-scoring updater (Part 1A.6): reads `performance_data` → nudges pillar weights / format prefs / topic boosts / hook patterns / persona weighting in the `content_strategy_config` table (Supabase); Monday Telegram report | 🟡 Medium | Adopted from Devon's Stage 8 but de-scoped from "intelligence layer" to a weights updater. Needs months of data to matter. |
 | F6 | **Parallel run + cutover** | 2–3 days dry-run (publish disabled) → 1 supervised live day → decommission (Part 4); drop the Sheet, keep only Supabase | 🟢 Easy, time-gated | OpenClaw stays fully operational until this point. The single switching moment. |
-| F7 | **Autonomous reel (video) pipeline** | Extends Part 1 (`reel.py`) + F3 (research) + F4 (loop) so the engine RESEARCHES → SCRIPTS → generates → captions → posts **video reels**, not only images. The **only credit-bearing autonomous path** (Higgsfield) → concept is approved **before** any spend. | 🔴 Hard | **PLANNED — see "Planned module F7" below.** Reuses existing machinery (`higgsfield.py video`, `preflight.py`, `reel.py`, Whisper); net-new = script-gen + auto beat-grouping + reel-brief wiring. Sequence after the image loop is proven live; independent of F5. |
+| F7 | **Autonomous reel (video) pipeline** | Extends Part 1 (`reel.py`) + F3 (research) + F4 (loop) so the engine RESEARCHES → SCRIPTS → generates → captions → posts **video reels**, not only images. The **only credit-bearing autonomous path** (Higgsfield) → concept is approved **before** any spend. | 🔴 Hard | **✅ BUILT 2026-06-18 — see "Module F7" below.** Reuses existing machinery (`higgsfield.py video`, `preflight.py`, `reel.py`, Whisper); net-new = `source_bank.py`/`script.py`/`reel_video.py`/`reel_captions.py` + reel-brief wiring. Proven 0-credit (79 tests); awaiting Marvin's OK for the first real Seedance generation (`REELS_LIVE`). |
+
+### Module F7 — **autonomous reel (video) pipeline** · ✅ BUILT 2026-06-18
+
+> **Status: BUILT & proven 0-credit; awaiting Marvin's OK for the first real Seedance generation.**
+> New files (all additive): `source_bank.py` (RV0), `script.py` (RV2), `reel_video.py` (RV3),
+> `reel_captions.py` (RV4) + tests `tests/test_{source_bank,script,concept_gate,reel_video,reel_captions,reel_push,reel_loop}.py`.
+> Co-owned edits (additive, backward-compatible): `research.py` (Source Bank + `assemble_reel_brief`
+> + `research.py bank` + `--reel`/weekly-mix), `engine.py` (`reel` 2/day cap + `reels_live()` switch
+> + concept statuses), `telegram.py` (concept card + reel final-push via `sendVideo` + dict-caption
+> fix), `approvals.py` (status-gated concept gate), `produce_daily.py` (reel state machine),
+> `schemas/brief.schema.json` (`youtube` platform).
+>
+> **Flow:** `research.py {bank --format reel | inbox/outliers --reel}` → `type=reel` brief →
+> `produce_daily.py run` (or `reel <job>`): **PHASE A** RV2 script → captions → **GATE 1** concept
+> card (Telegram, "APPROVE spends ~1 credit") → APPROVE → **PHASE B** RV3 `reel_video.py` (preflight +
+> VIDEO-block-verbatim + Seedance b-roll, no face/text; **only credit spend**; hard 2/day cap) →
+> RV4 `reel_captions.py` (Kokoro TTS → mux → Whisper → reconcile-to-script → auto beat-group →
+> `reel.py`) → **GATE 2** final video review → APPROVE → `publish.py` (TikTok + X + YouTube).
+>
+> **Two supervised switches (independent):** `output/GO_LIVE` (publishing) and **`output/REELS_LIVE`**
+> (autonomous credit generation). Without `REELS_LIVE` the loop dry-runs RV3 (0 credits) and parks
+> concept-approved reels. The concept gate is trust-neutral (trust moves only at the final gate).
+>
+> **Proven 0-credit:** Source Bank on the paid Diary-of-a-CEO source (5 angles, RED dropped, mined to
+> ACME-020/021/022); RV1 schema-valid reel brief; RV2 script (RED-gated); GATE 1 (concept_qc, no trust,
+> both gates coexist); RV3 dry-run (preflight PASS, gates block/pass) + `--owned-clip` 9:16 crop; RV4
+> live Whisper transcribe→beats; GATE 2 video push + publish dry-run PASS (X/TikTok/YouTube); LOOP live
+> Phase A. 79 F7 tests green. **Env-gated on the build box only** (the real Mac mini has them, like
+> reel.py for ACME-007/012): Kokoro TTS (`kokoro-onnx`+`soundfile`) and the `reel.py` render browser.
 
 ### Planned module F7 (2026-06-18, Marvin) — **autonomous reel (video) pipeline**
 

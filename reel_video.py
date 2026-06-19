@@ -272,9 +272,20 @@ def do_owned_clip(job: Path, clip: Path) -> int:
 
 
 def _download(url: str, dst: Path) -> None:
+    import ssl
     import urllib.request
+    # Verify with the certifi CA bundle (the repo pattern — bare urllib has no local issuer
+    # cert and fails on the Higgsfield CDN). ENGINE_INSECURE_SSL=1 disables it for a sandbox.
+    if (e.load_env("ENGINE_INSECURE_SSL") or "").strip() == "1":
+        ctx = ssl._create_unverified_context()
+    else:
+        try:
+            import certifi
+            ctx = ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            ctx = ssl.create_default_context()
     try:
-        with urllib.request.urlopen(url, timeout=120) as resp, dst.open("wb") as f:
+        with urllib.request.urlopen(url, timeout=180, context=ctx) as resp, dst.open("wb") as f:
             f.write(resp.read())
     except Exception as ex:
         fail(f"download failed: {ex}")
