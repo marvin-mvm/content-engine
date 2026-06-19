@@ -48,7 +48,6 @@ def main():
     e.read_status = lambda jid: status.get(jid)
     e.write_status = lambda jid, s, **kw: status.__setitem__(jid, {"status": s, **kw})
     e.apply_trust_event = lambda *a, **k: trust_calls.append(a) or {"score": 999}
-    e.record_decision = lambda *a, **k: None      # don't touch the real decision ledger in tests
     tg.send_text = lambda text, dry_run: True
 
     # 1 — concept APPROVE: concept_qc written, NO final qc, NO trust.
