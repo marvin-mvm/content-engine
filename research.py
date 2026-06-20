@@ -49,7 +49,10 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import engine as eng  # shared core — content cadence (alternating-day video) lives here
+
 import source_bank  # RV0 — full-transcript harvest & angle reuse (0 extraction cost)
+import engine as eng  # decision-ledger feedback: skip topics a human previously REJECTED
 
 WS = Path(__file__).parent.resolve()
 PY = sys.executable or "python3"
@@ -360,13 +363,18 @@ def print_breakdown(score):
 
 
 def discover_topics(candidates, engine_state, fresh=False):
-    """Score every candidate, drop blocked, print breakdowns, return sorted scores."""
+    """Score every candidate, drop blocked + previously-rejected, print breakdowns, return sorted."""
     blocked = [b.lower() for b in engine_state.get("blocked_topics", [])]
+    rejected = eng.rejected_topics()      # learn from TG: don't re-propose a hard-rejected angle
     tw = engine_state.get("topic_weights", {})
     scored = []
     for c in candidates:
-        if any(b in c.lower() for b in blocked):
+        cl = c.lower()
+        if any(b in cl for b in blocked):
             log(f"blocked: {c}")
+            continue
+        if any(r == cl or r in cl for r in rejected):
+            log(f"skipped (a near-identical angle was REJECTED in TG before — avoiding a repeat): {c}")
             continue
         sig = gather_signals(c, fresh=fresh)
         sc = score_topic(c, sig, tw)
@@ -677,18 +685,29 @@ def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
     return brief
 
 
-# §3.2 weekly content-mix — which (pillar, weekday) cells are REELS (0=Mon). Encoded from
-# CONTENT_ENGINE_GUIDE §3.2: Science=Wed/Sun, Trending=Mon/Wed/Fri/Sun. This naturally
-# respects the 2-reels/day cap (Wed & Sun = both fire = 2; Mon/Fri = 1). Stack/Proof/Founder
-# are image-format in §3.2, so they default to image briefs.
-WEEKLY_REEL = {"science": {2, 6}, "trending": {0, 2, 4, 6}}
+# Video cadence — ALTERNATING DAYS only (Marvin 2026-06-19, OVERRIDES Devon's §3.2 grid which
+# fired reels up to 4 days/week / 2 a day). A reel ≈ 135 real Higgsfield credits, so daily video
+# would blow the Ultra monthly budget (3000); every-other-day keeps it to ~1 reel/video-day.
+# On a video day EXACTLY ONE pillar carries the reel, alternating trending <-> science across
+# video days so both keep a video presence. Every other pillar — and ALL pillars on a non-video
+# day — produce 0-credit images. The video-day calendar lives in engine (eng.is_video_day).
+REEL_PILLARS = ("trending", "science")   # the pillars eligible to carry the alternating reel
 
 
-def slot_wants_reel(pillar, weekday=None):
-    """True when the §3.2 weekly mix calls for a video reel in this pillar today (the
-    'slot calls for video' trigger the F7 loop consults)."""
-    weekday = datetime.now().weekday() if weekday is None else weekday
-    return weekday in WEEKLY_REEL.get(pillar, set())
+def reel_pillar_today(d=None):
+    """The single pillar that gets the video reel today, or None on a non-video day."""
+    d = d or datetime.now(eng.PT).date()
+    if not eng.is_video_day(d):
+        return None
+    video_index = (d.toordinal() - eng._video_anchor().toordinal()) // 2  # 0,1,2… per video day
+    return REEL_PILLARS[video_index % len(REEL_PILLARS)]
+
+
+def slot_wants_reel(pillar, d=None):
+    """True only when TODAY is a video day AND `pillar` is the one reel pillar for it. §3.2 is
+    overridden to alternating-day video (Marvin 2026-06-19): at most ONE reel/day, never on two
+    consecutive days. The 'slot calls for video' trigger the F7 loop consults."""
+    return pillar == reel_pillar_today(d)
 
 
 def assemble_reel_brief(pillar, topic, *, persona=None, brand=None, reference=None,
@@ -707,6 +726,9 @@ def assemble_reel_brief(pillar, topic, *, persona=None, brand=None, reference=No
     cover_tpl = "story-reel-light" if brand == "health" else "story-reel-dark"
 
     job_id = job_id or next_job_id()
+    if not eng.is_video_day():   # alternating-day cadence (Marvin 2026-06-19) — note, don't block a manual override
+        log(f"note: today is NOT a video day (alternating cadence) — building reel {job_id} anyway "
+            f"(manual/override; the autonomous loop only makes reels on video days)")
     bn = "ACME HEALTH" if brand == "health" else "ACME LABS"
     handle = "@acmehealth" if brand == "health" else "@acmelabs"
     brief = {

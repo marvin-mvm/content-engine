@@ -291,7 +291,7 @@ def handle_reel(job_dir: Path, *, generate: bool = False, dry_run_push: bool = F
       PHASE B (post-approval): RV3 reel_video.py (the credit spend, dry-run unless REELS_LIVE
         + generate) -> RV4 reel_captions.py -> captions.json -> push FINAL (GATE 2) -> pushed
 
-    The RV3 spend is ALWAYS behind GATE 1 (concept_qc) AND the engine 2/day cap, and only
+    The RV3 spend is ALWAYS behind GATE 1 (concept_qc) AND the engine 6 credits/day cap, and only
     actually fires when both `generate` and engine.reels_live() are set — otherwise RV3 runs
     DRY-RUN (0 credits) and the reel parks at concept_approved until generation is enabled."""
     job_id = job_dir.name
@@ -319,7 +319,8 @@ def handle_reel(job_dir: Path, *, generate: bool = False, dry_run_push: bool = F
                 cmd = [PY, REEL_VIDEO, str(job_dir)]
                 if generate and e.reels_live():
                     cmd.append("--go")
-                    e.log(f"{job_id}: RV3 — REELS_LIVE on → may spend 1 reel credit (gated by cap + concept)")
+                    e.log(f"{job_id}: RV3 — REELS_LIVE on → may spend up to {e._caps()['reel']} REAL Higgsfield "
+                          f"credits/day (~45 per stitched clip; gated by cap + live wallet + concept)")
                 else:
                     e.log(f"{job_id}: concept approved → RV3 DRY-RUN (REELS_LIVE off / no --generate); 0 credits")
                 _sub(cmd)
@@ -522,7 +523,7 @@ def main():
     pr.add_argument("--force", action="store_true", help="Rebuild captions even if present")
     pr.add_argument("--generate-reels", action="store_true",
                     help="Let concept-approved reels SPEND on RV3 generation (still needs REELS_LIVE "
-                         "+ a per-reel concept approval + the 2/day cap). Default: RV3 dry-run, 0 credits.")
+                         "+ a per-reel concept approval + the 6 credits/day cap). Default: RV3 dry-run, 0 credits.")
     pr.set_defaults(carousel=True, func=cmd_run)
 
     prl = sub.add_parser("reel", help="F7: advance ONE reel through its phases (RV2 -> GATE 1 -> RV3 -> RV4 -> GATE 2)")

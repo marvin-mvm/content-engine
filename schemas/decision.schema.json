@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acme.local/schemas/decision.schema.json",
+  "title": "Acme review decision (the A/R/E learning ledger)",
+  "description": "One human approve/revise/reject/hold decision, appended (newest last) to output/engine/decisions.jsonl by approvals.py via engine.record_decision(). Append-only; never rewritten. Captures the CONTENT each decision judged so the system learns which prompts/scripts/angles get approved vs rejected. This is the SUPABASE-MIGRATION CONTRACT: each line maps 1:1 to a row of the `review_decisions` table (8th table alongside Devon's 7; see MIGRATION.md §1A.5 data layer). Local JSONL is the system-of-record during the build; db.py (supabase-py) replays/streams these rows into Postgres at cutover — there is no other path for the review history to reach Supabase.",
+  "type": "object",
+  "required": ["at", "job_id", "verb", "gate", "who"],
+  "additionalProperties": false,
+  "properties": {
+    "at": { "type": "string", "format": "date-time", "description": "UTC ISO8601 (Z). Postgres: timestamptz, decided_at." },
+    "job_id": { "type": "string", "pattern": "^ACME-[0-9]{3,}$", "description": "FK -> the job; Postgres: text, indexed." },
+    "verb": { "enum": ["approve", "revise", "reject", "hold"], "description": "The human decision. reject/revise are the negative signals the feedback loop steers away from." },
+    "gate": { "enum": ["concept", "final"], "description": "concept = F7 reel pre-credit script/concept gate; final = the publish sign-off gate." },
+    "who": { "type": "string", "description": "Telegram username / attribution of the reviewer." },
+    "note": { "type": ["string", "null"], "description": "The reviewer's REASON (free text). The most valuable learning signal on a rejection." },
+    "content": {
+      "type": "object",
+      "description": "Snapshot of what was judged (only non-empty fields are kept). Postgres: a jsonb column, or normalized into review_decisions columns. This is the corpus rejected_lessons()/rejected_topics() mine.",
+      "additionalProperties": true,
+      "properties": {
+        "type": { "enum": ["reel", "image"], "description": "Content kind — scopes the feedback (reel lessons -> script.py, image -> research.py)." },
+        "brand": { "type": "string" },
+        "pillar": { "type": "string" },
+        "topic": { "type": "string", "description": "The angle/topic. rejected_topics() avoids re-proposing a hard-rejected one." },
+        "compound": { "type": "string" },
+        "description": { "type": "string", "description": "Reference/source description (Mode-B clone provenance)." },
+        "hook": { "type": "string", "description": "The extracted/cloned hook." },
+        "format": { "type": "string", "description": "Cloned viral format (e.g. this_or_that)." },
+        "script": { "type": "string", "description": "REEL: the spoken script (RV2). The thing a rejected-reel lesson steers script.py away from." },
+        "video_prompts": { "type": "array", "items": { "type": "string" }, "description": "REEL: the b-roll generation prompts (the only Higgsfield-credit spend)." },
+        "bg_prompt": { "type": "string", "description": "IMAGE: background generation prompt, when bg_policy=generate." },
+        "caption_x": { "type": "string", "description": "The X caption that was judged." },
+        "slides": { "type": "array", "items": { "type": "string" }, "description": "Carousel slide headline/body lines." }
+      }
+    }
+  }
+}

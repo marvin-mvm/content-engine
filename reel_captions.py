@@ -62,15 +62,24 @@ def tts(script: str, out: Path, voice: str, speed: float) -> None:
     e.log(f"TTS -> {out.name} (voice={voice})")
 
 
-# ── 2. mux narration over the b-roll (loop the short b-roll to the VO length) ──
+# ── 2. mux narration over the b-roll (loop ONLY if the b-roll is shorter than the VO) ──
 def mux(broll: Path, narration: Path, out: Path) -> None:
-    r = _run(["ffmpeg", "-stream_loop", "-1", "-i", str(broll), "-i", str(narration),
+    """Lay the narration over the b-roll, trimmed to the voiceover (-shortest). RV3 now stitches
+    several distinct clips (~30s) so the b-roll usually COVERS the VO and plays straight through
+    — no visible loop (Marvin 2026-06-19). We only re-enable -stream_loop as a fallback when the
+    b-roll is shorter than the narration (e.g. some clips failed); that case is logged."""
+    bdur, ndur = _duration(broll), _duration(narration)
+    needs_loop = bdur > 0 and ndur > 0 and bdur < ndur - 0.05
+    pre = ["-stream_loop", "-1"] if needs_loop else []
+    r = _run(["ffmpeg", *pre, "-i", str(broll), "-i", str(narration),
               "-map", "0:v:0", "-map", "1:a:0", "-shortest",
               "-c:v", "libx264", "-r", "30", "-pix_fmt", "yuv420p", "-c:a", "aac",
               "-movflags", "+faststart", "-y", str(out)])
     if r.returncode != 0 or not out.exists():
         fail(f"ffmpeg mux failed:\n{r.stderr[-800:]}")
-    e.log(f"muxed narration over b-roll -> {out.name}")
+    if needs_loop:
+        e.log(f"b-roll ({bdur}s) shorter than VO ({ndur}s) — looped to fill (consider more/longer clips)")
+    e.log(f"muxed narration over b-roll -> {out.name} ({'looped' if needs_loop else 'straight-through'})")
 
 
 # ── 3. transcribe ────────────────────────────────────────────────────────────

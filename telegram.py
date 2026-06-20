@@ -173,9 +173,15 @@ def build_concept_card(job_dir: Path) -> str:
         lines.append(f"   {ref['url']}")
     elif ref.get("selection_rationale"):
         lines.append(f"📎 Why: {ref['selection_rationale']}")
+    try:
+        n_clips = int(e.load_env("ENGINE_REEL_CLIPS") or 3)
+        per = int(e.load_env("ENGINE_REEL_CREDITS_PER_CLIP") or 45)
+    except (ValueError, TypeError):
+        n_clips, per = 3, 45
     lines += [
         "",
-        "⚠️ *APPROVE spends ~1 Higgsfield credit* (Seedance b-roll). REJECT / REVISE cost nothing.",
+        f"⚠️ *APPROVE spends ~{n_clips * per} Higgsfield credits* ({n_clips} stitched b-roll clips "
+        f"× ~{per} each). REJECT / REVISE cost nothing.",
         f"Reply: `APPROVE {job_id}`  /  `REJECT {job_id} [note]`  /  `REVISE {job_id} [note]`",
     ]
     return "\n".join(lines)

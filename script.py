@@ -63,7 +63,7 @@ def _target_words(seconds: int) -> int:
     return max(12, round(seconds * WORDS_PER_SEC))
 
 
-def build_user_prompt(*, topic, pillar, persona, brand, reference, seconds) -> str:
+def build_user_prompt(*, topic, pillar, persona, brand, reference, seconds, avoid=None) -> str:
     cloned = (reference or {}).get("cloned_format")
     parts = [
         f"Brand: Acme {brand.title()}.",
@@ -73,6 +73,10 @@ def build_user_prompt(*, topic, pillar, persona, brand, reference, seconds) -> s
     ]
     if cloned:
         parts.append(f"Clone this viral STRUCTURE only (not its words/claims): {cloned}.")
+    if avoid:
+        parts.append(
+            "AVOID repeating these — reel concepts a human PREVIOUSLY REJECTED/REVISED. Do not "
+            "reuse their angle or repeat the flagged mistake (the REASON says why):\n" + avoid)
     parts.append(
         "Return ONLY a JSON object with the spoken text per beat plus the joined script:\n"
         '{ "hook": "<~1 sentence, lands in the first 2s>", '
@@ -86,12 +90,13 @@ def build_user_prompt(*, topic, pillar, persona, brand, reference, seconds) -> s
 
 
 def generate(*, topic, pillar, persona, brand, reference=None, seconds=DEFAULT_SECONDS,
-             model=DEFAULT_MODEL, api_key=None, retry_on_red=True):
+             model=DEFAULT_MODEL, api_key=None, retry_on_red=True, avoid=None):
     """Generate the spoken script. Returns (beats_dict, warnings). Raises ScriptComplianceError
-    if a RED claim survives a compliant-rewrite retry (so it can never reach a credit spend)."""
+    if a RED claim survives a compliant-rewrite retry (so it can never reach a credit spend).
+    `avoid` is an optional compact block of previously-rejected reel lessons to steer away from."""
     api_key = api_key or load_api_key()
     user = build_user_prompt(topic=topic, pillar=pillar, persona=persona, brand=brand,
-                             reference=reference, seconds=seconds)
+                             reference=reference, seconds=seconds, avoid=avoid)
     messages = [{"role": "system", "content": SCRIPT_SYSTEM}, {"role": "user", "content": user}]
 
     for attempt in (1, 2):
@@ -171,9 +176,19 @@ def main():
     else:
         ap.error("provide a job_dir or --topic")
 
+    # Steer away from past mistakes: inject the (few) previously-rejected reel lessons.
+    try:
+        import engine as eng
+        avoid = eng.rejected_lessons_text(kind="reel")
+        if avoid:
+            print(f"[script] steering away from {len(avoid.splitlines())} prior rejected reel(s)", file=sys.stderr)
+    except Exception:
+        avoid = None
+
     try:
         beats, warnings = generate(topic=topic, pillar=pillar, persona=persona, brand=brand,
-                                   reference=reference, seconds=args.seconds, model=args.model)
+                                   reference=reference, seconds=args.seconds, model=args.model,
+                                   avoid=avoid)
     except ScriptComplianceError as e:
         print(f"[script] BLOCKED — RED compliance claims survived rewrite: {e.red}", file=sys.stderr)
         print(f"[script] offending text: {e.text}", file=sys.stderr)

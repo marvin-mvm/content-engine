@@ -125,15 +125,39 @@ via Telegram.
 > ⚠️ **Reality now:** IG / Threads / Facebook **not connected** (Meta accounts under review) →
 > `publish.py` posts only the **X + TikTok** legs and skips the rest with a warning. The table is
 > the target once Meta is healthy.
+>
+> 🔴 **The "Reel" slots above are NOT daily** — video runs on **alternating days only** (≤1 reel/
+> day). On a non-video day those slots ship a 0-credit image instead. See **§3.2 / §3.5**.
 
 ### 3.2 Weekly content-mix rotation (format per pillar per day)
+
+> 🔴 **OVERRIDE — VIDEO RUNS ON ALTERNATING DAYS, NOT DAILY (Marvin 2026-06-19).** Devon's
+> original grid below fired video reels up to 4 days/week (and twice on some days). At the real
+> Higgsfield price — **a reel ≈ 135 credits** (3 stitched 10s clips × ~45) — daily video would
+> cost ~4,050 credits/month and blow the **Ultra plan's 3,000-credit/month** allotment. So:
+>
+> - **Video (type=reel) is produced every OTHER calendar day**, 7-day week, never two days in a
+>   row, alternating across week boundaries (engine `is_video_day()`, anchored to Mon 2026-06-22;
+>   override `.env ENGINE_VIDEO_ANCHOR`). On a **non-video day, NO reel is produced** — every
+>   pillar ships a 0-credit image/carousel/text-reel instead.
+> - On a **video day, exactly ONE pillar carries the reel**, alternating **Trending ↔ Science**
+>   across video days (`research.reel_pillar_today()`). At most **1 reel/day**.
+> - Budget math: ~15 video-days/mo × 1 reel × 135 ≈ **2,025 credits/mo on video**, leaving ~975
+>   for rejected-reel re-gens + image generation (see §3.5). Daily video (≈30 reels) ≈ 4,050 = over.
+>
+> The table below is the *format intent per pillar*; wherever it says **Reel**, that reel only
+> fires if today is this pillar's video day (otherwise the pillar's non-reel format is used).
+
 | Pillar | Mon | Tue | Wed | Thu | Fri | Sat | Sun |
 |---|---|---|---|---|---|---|---|
-| Science Simplified | Carousel | Single | Reel | Carousel | Single | Carousel | Reel |
+| Science Simplified | Carousel | Single | Reel¹ | Carousel | Single | Carousel | Reel¹ |
 | Stack of the Day | Carousel | Graphic | Carousel | Compare | Carousel | Graphic | Carousel |
-| Trending Hook | Reel | Carousel | Reel | This/That | Reel | Myth-bust | Reel |
+| Trending Hook | Reel¹ | Carousel | Reel¹ | This/That | Reel¹ | Myth-bust | Reel¹ |
 | Social Proof | Framework | Biomarker | Case Study | Quote | Framework | Outcome | Community Q |
 | Founder POV | Opinion | Contrarian | Quote Card | Industry | Philosophy | Build Story | Hot Take |
+
+> ¹ **Reel only on this pillar's alternating video day** (≤1 reel/day total). On any other day the
+> "Reel" cell falls back to that pillar's image format (Trending → Carousel, Science → Carousel).
 
 ### 3.3 Monthly themes (overlaid on the daily pillars; in `content_strategy_config`)
 | Month | Theme | Hero compound focus | Lead-magnet tie-in |
@@ -150,6 +174,26 @@ via Telegram.
 - **TikTok** — same video, TikTok-native (no watermark), 3–5 targeted hashtags, text hook on first frame.
 - **X/Twitter** — quote cards + strong opinion only (not all 5); thread for Science (each carousel slide → a tweet); **0 hashtags**; reply-engage within 2h.
 - **Threads** — Social Proof + Founder POV only; short punchy repurpose of the IG caption.
+
+### 3.5 Credit budget & generator routing (Ultra plan — Marvin 2026-06-19)
+**Monthly ceiling: 3,000 Higgsfield credits (Ultra).** The engine protects it on three fronts:
+
+1. **Video = alternating days, ≤1 reel/day** (§3.2). ~15 reels/mo × ~135 ≈ **2,025 credits/mo**.
+2. **Rejection allowance.** A rejected reel must be re-generated, so budget a buffer — assume up
+   to ~20% of reels bounce: ~3 re-gens/mo × 135 ≈ **~400 credits/mo** held back. (2,025 + 400 ≈
+   2,425, leaving ~575/mo for image generation.) Concept approval **before** any spend (GATE 1)
+   keeps most rejections free — only a *final*-gate rejection of an already-generated reel costs.
+3. **Image generator rotation — ~80% Higgsfield / ~20% Blotato.** Most images render locally at
+   **0 credits** (carousels/statics/text-reels via `post.py`, `bg_policy: plain|reuse`). When an
+   image truly needs a *generated* background, the engine spreads the spend on a **rolling 4:1**:
+   **4 of every 5 → Higgsfield, the 5th → Blotato** (its own quota), to conserve Higgsfield credits.
+   This is `engine.image_source()` (a persisted rolling counter — a true 4:1, not random), consumed
+   by `produce.py --bg-prompt` (`--bg-source auto`). **Activation:** set `.env BLOTATO_IMAGE_TEMPLATE_ID`
+   to a Blotato image template; until then the 5th image safely falls back to Higgsfield (logged).
+   Tune the ratio with `.env ENGINE_IMAGE_BLOTATO_EVERY` (default 5 = 1-in-5).
+
+Hard daily backstop (independent of the above): `engine.py` `reel` cap = **135 real credits/day**
++ a live-wallet gate (refuse if the Higgsfield balance is short). See `reel_video.py`.
 
 ---
 

@@ -26,7 +26,7 @@ import json
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from pathlib import Path
 
 try:                                   # py3.9+ stdlib; America/Los_Angeles = PT
@@ -55,9 +55,13 @@ PILLAR_SLOT = {                         # mirrors research.py PILLAR_PRESETS["sl
 # ── spend caps (per-day ceilings; Marvin-confirmed 2026-06-18) ─────────────────
 # Each is a hard daily ceiling; the loop refuses the call that would exceed it.
 # Overridable via .env (ENGINE_CAP_COPY / ENGINE_CAP_SEARCHAPI / ENGINE_CAP_APIFY / ENGINE_CAP_REEL).
-# `reel` is the ONLY Higgsfield-credit-bearing cap: a HARD 2 reels/day ceiling (1 typical),
-# Marvin 2026-06-18 — reel_video.py (F7 RV3) spends it just before a Seedance generation.
-DEFAULT_CAPS = {"copy": 30, "searchapi": 20, "apify": 3, "reel": 2}
+# `reel` is the ONLY Higgsfield-credit-bearing cap, and it counts REAL Higgsfield billing
+# credits — NOT a generation count (Marvin 2026-06-19: a single Seedance video is ~45 real
+# credits, so the old "N reels/day" counter badly understated the spend). reel_video.py (F7
+# RV3) spends ENGINE_REEL_CREDITS_PER_CLIP (~45) per stitched clip just before each generation,
+# AND gates on the live wallet balance. A HARD 135 real-credits/day ceiling ≈ 1 premium reel/day
+# at 3×10s clips (Marvin 2026-06-19). Tune via .env ENGINE_CAP_REEL / ENGINE_REEL_CREDITS_PER_CLIP.
+DEFAULT_CAPS = {"copy": 30, "searchapi": 20, "apify": 3, "reel": 135}
 
 # ── compliance — SINGLE SOURCE OF TRUTH is compliance.py (Red/Yellow/Green framework).
 #    Re-exported so existing callers keep working: e.BANNED / e.RUO_SENTENCE / e.RUO_RE,
@@ -141,7 +145,7 @@ def reels_live() -> bool:
     """Autonomous reel GENERATION (the only Higgsfield-credit spend) is enabled only when the
     REELS_LIVE flag exists (Marvin's one-file switch, independent of GO_LIVE/publishing).
     Absent ⇒ the loop dry-runs RV3 (builds prompt + preflight + gates, spends NOTHING). A
-    concept must STILL be approved per reel (GATE 1) and the 2/day cap still applies."""
+    concept must STILL be approved per reel (GATE 1) and the 135 real-credits/day cap still applies."""
     return REELS_LIVE_FILE.exists() or (load_env("ENGINE_REELS_LIVE") or "").strip() == "1"
 
 
@@ -149,6 +153,56 @@ def compliance_hold() -> bool:
     """SOUL §16: a live compliance issue sets a hold; only the owner releases it
     (RESUME PUBLISHING). While held, publishing must stop."""
     return bool(read_state().get("compliance_hold"))
+
+
+# ── content cadence: alternating-day VIDEO + rolling image source (Marvin 2026-06-19) ─────
+# Video reels run EVERY OTHER calendar day — NOT daily (Marvin 2026-06-19, overriding Devon's
+# §3.2 grid). Rationale = the Ultra plan's monthly credit budget: 3000 credits/mo; a reel ≈ 135
+# real credits (3×~45). Alternating ⇒ ~15 video-days/mo × 1 reel × 135 ≈ 2025, leaving ~975 for
+# rejected-reel re-gens + image generation. Daily video (≈30 reels) would be ~4050 — over budget.
+VIDEO_ANCHOR_DEFAULT = "2026-06-22"   # a Monday; this date and every 2nd day from it are video days
+
+
+def _video_anchor() -> date:
+    """The reference video day (a Monday by default). Override with .env ENGINE_VIDEO_ANCHOR."""
+    s = (load_env("ENGINE_VIDEO_ANCHOR") or VIDEO_ANCHOR_DEFAULT).strip()
+    for cand in (s, VIDEO_ANCHOR_DEFAULT):
+        try:
+            y, m, d = (int(x) for x in cand.split("-"))
+            return date(y, m, d)
+        except (ValueError, TypeError):
+            continue
+    return date(2026, 6, 22)
+
+
+def is_video_day(d: "date | None" = None) -> bool:
+    """True on alternating calendar days (video reels run every OTHER day, 7-day week). The
+    anchor is a video day and so is every 2nd day from it, ACROSS week boundaries — so there is
+    never a two-days-in-a-row video stretch (which weekday-parity would create at Sun→Mon)."""
+    d = d or datetime.now(PT).date()
+    return (d.toordinal() - _video_anchor().toordinal()) % 2 == 0
+
+
+def image_source(advance: bool = True) -> str:
+    """Which engine GENERATES the next image that needs a fresh background. Most images render
+    locally at 0 credits; when one truly needs generation we spread the spend ~4:1 — ~4 of every
+    5 to Higgsfield, ~1 of 5 to Blotato (its own quota) to conserve Higgsfield credits (Marvin
+    2026-06-19). A persisted rolling counter (engine_state.image_source_counter) makes it a TRUE
+    4:1, not random. Tune the 1-in-N with .env ENGINE_IMAGE_BLOTATO_EVERY (default 5).
+    advance=False peeks without consuming a slot."""
+    try:
+        every = int(load_env("ENGINE_IMAGE_BLOTATO_EVERY") or 5)
+    except (ValueError, TypeError):
+        every = 5
+    if every < 2:
+        every = 5
+    st = read_state()
+    n = int(st.get("image_source_counter", 0)) + 1
+    src = "blotato" if (n % every == 0) else "higgsfield"
+    if advance:
+        st["image_source_counter"] = n
+        write_state(st)
+    return src
 
 
 # ── per-day spend budget ─────────────────────────────────────────────────────────
@@ -201,7 +255,7 @@ def spend(kind: str, n: int = 1, date: str | None = None) -> bool:
 
 
 # ── per-job status (engine bookkeeping; brief.json is left untouched) ────────────
-VALID_STATUS = {"produced", "pushed", "approved", "rejected", "revise",
+VALID_STATUS = {"produced", "pushed", "approved", "scheduled", "rejected", "revise",
                 "published", "held", "failed",
                 # F7 reel concept gate (GATE 1, pre-credit)
                 "awaiting_concept", "concept_approved", "concept_rejected",
@@ -331,6 +385,136 @@ def ensure_slotted_in_manifest(job_id: str, date: str | None = None) -> str | No
         entry.setdefault("brand", brand)
     write_manifest(jobs, date)
     return slot
+
+
+# ── decision ledger (the Sheets-style A/R/E record — learn from approved vs rejected) ──
+# Append-only JSONL: one human decision per line, with a snapshot of the CONTENT it judged
+# (topic/angle, the script + generation prompts, the caption, slide copy). This is the
+# durable corpus that lets the system learn which prompts/scripts get approved vs rejected.
+# Lives under output/ (gitignored, runtime data — the local successor to the old Sheets log).
+DECISIONS_LOG = ENGINE_DIR / "decisions.jsonl"
+
+
+def _decision_snapshot(job_id: str) -> dict:
+    """Pull the content worth keeping for the learning corpus from a job's folder: the
+    brief's topic/angle, any script + generation prompts (reels / generated images), the X
+    caption, and slide copy. Best-effort; only non-empty fields are kept."""
+    jd = JOBS_DIR / job_id
+    brief = load_json(jd / "brief.json") or {}
+    ref = brief.get("reference") or {}
+    snap = {
+        "type": brief.get("type"), "brand": brief.get("brand"), "pillar": brief.get("pillar"),
+        "topic": brief.get("topic"), "compound": brief.get("compound"),
+        "description": ref.get("description"),
+        "hook": ref.get("extracted_hook"),
+        "format": ref.get("cloned_format") or (ref.get("scoring_breakdown") or {}).get("format"),
+        "script": brief.get("script"),
+        # generation prompts, under whatever key the pipeline used (reel b-roll, image bg)
+        "video_prompts": brief.get("video_prompts") or brief.get("broll_prompts") or brief.get("clips"),
+        "bg_prompt": (brief.get("image") or {}).get("bg_prompt"),
+    }
+    caps = load_json(jd / "captions.json")
+    if isinstance(caps, dict):
+        x = caps.get("x")
+        snap["caption_x"] = x.get("text") if isinstance(x, dict) else x
+    slides = load_json(jd / "slides.json")
+    if isinstance(slides, list):
+        snap["slides"] = [
+            " / ".join(str(s[k]) for k in ("HEAD_1", "HEAD_2_ITALIC", "HEAD_3", "BODY") if s.get(k))
+            for s in slides if isinstance(s, dict)
+        ] or None
+    return {k: v for k, v in snap.items() if v not in (None, "", [])}
+
+
+def record_decision(job_id: str, verb: str, gate: str, who: str, note: str | None) -> None:
+    """Append ONE human A/R/E decision (approve/revise/reject/hold) to the decision ledger,
+    with a snapshot of the content it judged. Append-only; never rewritten. Best-effort —
+    a logging failure must NEVER break the approval path."""
+    try:
+        ENGINE_DIR.mkdir(parents=True, exist_ok=True)
+        rec = {"at": now_iso(), "job_id": job_id, "verb": verb.lower(), "gate": gate,
+               "who": who, "note": note or None, "content": _decision_snapshot(job_id)}
+        with (ENGINE_DIR / "decisions.jsonl").open("a", encoding="utf-8") as f:  # call-time path: follows a redirected ENGINE_DIR (test isolation)
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception as ex:                                  # pragma: no cover
+        log(f"decision-log skipped (non-fatal) for {job_id} {verb}: {ex}")
+
+
+def read_decisions() -> list[dict]:
+    """Every decision ever recorded (oldest→newest). Tolerates a partially-written tail line."""
+    path = ENGINE_DIR / "decisions.jsonl"
+    if not path.exists():
+        return []
+    out = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+# ── learning slice: steer generation AWAY from past rejections ───────────────────
+# Deliberately REJECTED-ONLY and capped. Rejections are far fewer than approvals, and the goal
+# is just "don't repeat a bad post" — so this stays tiny on purpose (cheap to inject, few tokens).
+NEGATIVE_VERBS = ("reject", "revise")     # reject = no; revise = needed changes — both are "avoid"
+
+
+def rejected_lessons(kind: str | None = None, limit: int = 12) -> list[dict]:
+    """The most recent REJECTED/REVISED decisions (newest first), optionally scoped to a content
+    kind ('reel'|'image'). Each lesson keeps only what's needed to steer away: topic, format, the
+    human's reason (note), and a short snippet of the rejected hook/script/caption."""
+    out = []
+    for d in reversed(read_decisions()):
+        if d.get("verb") not in NEGATIVE_VERBS:
+            continue
+        c = d.get("content", {})
+        if kind and c.get("type") != kind:
+            continue
+        snippet = (c.get("hook") or c.get("script") or c.get("caption_x") or "").strip()
+        out.append({
+            "job_id": d.get("job_id"), "verb": d.get("verb"),
+            "topic": c.get("topic"), "compound": c.get("compound"), "format": c.get("format"),
+            "reason": d.get("note"),
+            "snippet": (snippet[:200] + "…") if len(snippet) > 200 else snippet,
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def rejected_topics(limit: int = 60) -> set[str]:
+    """Lowercased topic phrases that were hard-REJECTED (not 'revise') — research.py skips a
+    candidate that re-proposes one, so a rejected angle isn't surfaced again. Zero LLM tokens.
+    Topic-phrase granularity (not bare compound) so one rejection never nukes a whole compound."""
+    bad: set[str] = set()
+    for d in reversed(read_decisions()):
+        if d.get("verb") != "reject":
+            continue
+        t = (d.get("content", {}).get("topic") or "").strip().lower()
+        if len(t) > 8:                         # guard: never let a tiny string blanket-block
+            bad.add(t)
+        if len(bad) >= limit:
+            break
+    return bad
+
+
+def rejected_lessons_text(kind: str | None = None, limit: int = 12) -> str:
+    """A compact, prompt-injectable block of the rejected lessons (empty string if none).
+    Short by design — only rejections, capped — so it adds minimal tokens to a generation call."""
+    lessons = rejected_lessons(kind=kind, limit=limit)
+    if not lessons:
+        return ""
+    lines = []
+    for L in lessons:
+        head = " · ".join(b for b in (L.get("topic"), L.get("format")) if b) or (L.get("job_id") or "")
+        reason = f" — REASON: {L['reason']}" if L.get("reason") else ""
+        snip = f' e.g. "{L["snippet"]}"' if L.get("snippet") else ""
+        lines.append(f"- [{L['verb']}] {head}{reason}{snip}")
+    return "\n".join(lines)
 
 
 # ── SOUL §16 trust-score events (engine_state.json) ──────────────────────────────

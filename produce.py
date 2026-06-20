@@ -70,11 +70,13 @@ def _ssl_context():
 
 from render import render, list_tokens
 from sheetlog import log_asset
+import engine as eng  # image-source rotation policy (Higgsfield/Blotato) lives in the core
 
 WORKSPACE = Path(__file__).parent
 OUTPUT_DIR = WORKSPACE / "output"
 ASSET_CACHE = WORKSPACE / "asset_cache"
 HIGGSFIELD = str(WORKSPACE / "higgsfield.py")
+BLOTATO = str(WORKSPACE / "blotato.py")
 
 # Prepended verbatim to every Higgsfield image prompt (CLAUDE.md §IMAGE Brand Prompt Block)
 IMAGE_BRAND_PROMPT = (
@@ -166,6 +168,53 @@ def higgsfield_generate(prompt: str, model: str = "flux_1_1_pro", aspect: str = 
     return str(cached)
 
 
+def blotato_generate(prompt: str) -> "str | None":
+    """Generate the background image via Blotato instead of Higgsfield (conserves Higgsfield
+    credits — Marvin 2026-06-19). Needs a Blotato image template id in .env BLOTATO_IMAGE_TEMPLATE_ID;
+    returns the local cached path, or None if it isn't configured / fails (caller falls back)."""
+    tid = (eng.load_env("BLOTATO_IMAGE_TEMPLATE_ID") or "").strip()
+    if not tid:
+        print("[produce] Blotato image template not set (BLOTATO_IMAGE_TEMPLATE_ID) — "
+              "falling back to Higgsfield this time.", file=sys.stderr)
+        return None
+    branded = f"{IMAGE_BRAND_PROMPT} {prompt}"
+    print(f"[produce] Blotato image (template={tid}) ...", file=sys.stderr)
+    r = subprocess.run(["python3", BLOTATO, "generate", tid, branded],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"[produce] Blotato generate failed — falling back to Higgsfield:\n{r.stderr[-300:]}",
+              file=sys.stderr)
+        return None
+    try:
+        data = json.loads(r.stdout)
+        if isinstance(data, list) and data:
+            data = data[0]
+        url = data.get("url") or data.get("exportUrl") or data.get("mediaUrl") or data.get("outputUrl")
+    except (json.JSONDecodeError, AttributeError):
+        url = None
+    if not url:
+        print("[produce] Blotato returned no image url — falling back to Higgsfield.", file=sys.stderr)
+        return None
+    return download_image(url)
+
+
+def bg_generate(prompt: str, model: str, aspect: str, source: str = "auto") -> str:
+    """Resolve the background-image generator per the rolling 4:1 policy (engine.image_source):
+    ~4 of 5 generated images → Higgsfield, ~1 of 5 → Blotato. `source` of 'higgsfield'/'blotato'
+    forces it (no rotation advance); 'auto' consults + advances the rolling counter."""
+    if source == "auto":
+        chosen = eng.image_source(advance=True)
+        print(f"[produce] image-source rotation → {chosen}", file=sys.stderr)
+    else:
+        chosen = source
+    if chosen == "blotato":
+        path = blotato_generate(prompt)
+        if path:
+            return path
+        # blotato unconfigured/failed → conserve the run, fall back to Higgsfield
+    return higgsfield_generate(prompt, model=model, aspect=aspect)
+
+
 def attach_thumbnail(video_path: str, thumb_path: str, output_path: str) -> str:
     """Embed a PNG as cover-art (attached_pic) in an mp4 and save to output_path."""
     result = subprocess.run(
@@ -231,6 +280,9 @@ def main():
                          "SLIDE_NUM/SLIDE_TOTAL auto-filled.")
     ap.add_argument("--model", default="gpt_image_2",
                     help="Higgsfield model (default: flux_1_1_pro)")
+    ap.add_argument("--bg-source", choices=["auto", "higgsfield", "blotato"], default="auto",
+                    help="Which engine generates the --bg-prompt image. 'auto' (default) follows "
+                         "the rolling 4:1 Higgsfield:Blotato policy to conserve Higgsfield credits.")
     ap.add_argument("--set", metavar="KEY=VALUE", action="append", default=[],
                     dest="pairs", help="Set a template placeholder value")
     ap.add_argument("--json", metavar="FILE", dest="json_file",
@@ -318,7 +370,7 @@ def main():
     # ── Image mode: resolve bg → render PNG ───────────────────────────────────
     bg_path = None
     if args.bg_prompt:
-        bg_path = higgsfield_generate(args.bg_prompt, model=args.model)
+        bg_path = bg_generate(args.bg_prompt, model=args.model, aspect="9:16", source=args.bg_source)
     elif args.bg_url:
         bg_path = download_image(args.bg_url)
     elif args.bg_file:
