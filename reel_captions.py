@@ -13,6 +13,11 @@ OWN the script so the captions are exact):
   5. auto BEAT-GROUP (3-5 words/beat, <=2 lines, UNIFORM_CREAM; RUNBOOK §2) -> caption_data.json
   6. reel.py -> captioned.mp4 + branded cover
 
+OVERLAY reels (default since 2026-06-20): when brief.overlay is set, the caption lives in the
+TRANSPARENT template overlay (composited over the video, never burned in). We keep steps 1-2
+(TTS + mux → voiced.mp4, so the reel still has a voiceover) then SHORT-CIRCUIT to reel.py's
+overlay path — steps 3-5 (transcribe / reconcile / caption_data) are skipped entirely.
+
 Usage:
   reel_captions.py <job_dir>                       # full TTS -> captioned reel
   reel_captions.py <job_dir> --voice am_michael --speed 1.0
@@ -207,6 +212,24 @@ def main():
         brief["video"] = str(voiced.relative_to(WS))   # reel.py captions the voiced clip
         (job / "brief.json").write_text(json.dumps(brief, ensure_ascii=False, indent=2))
         media = voiced
+
+    # ── OVERLAY reel model (Marvin 2026-06-20): caption lives in the template overlay, not
+    # burned in — so we DON'T need Whisper word-timings or caption_data.json. Keep the voiceover
+    # (TTS+mux above gives audio + sets brief.video=voiced.mp4) and hand the clip straight to
+    # reel.py's overlay path. Skips the Whisper transcribe step entirely (faster, one less dep).
+    if brief.get("overlay"):
+        if args.skip_reel:
+            e.log(f"{job.name}: overlay reel — voiceover ready, --skip-reel so stopping before composite")
+            print(f"video={brief.get('video')}")
+            return
+        e.log(f"{job.name}: overlay reel — skipping transcribe/caption_data (caption is in the template)")
+        r = _run([PY, str(WS / "reel.py"), str(job)], cwd=WS)
+        sys.stdout.write(r.stdout)
+        sys.stderr.write(r.stderr)
+        if r.returncode != 0:
+            fail(f"reel.py (overlay) render failed:\n{(r.stdout + r.stderr)[-800:]}")
+        e.log(f"{job.name}: overlay reel (voiceover + template caption) rendered")
+        return
 
     whisper = transcribe(media, model=args.model)
     words = reconcile(whisper, script) if script else \

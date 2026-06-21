@@ -69,13 +69,15 @@ CACHE_TTL = 24 * 3600  # seconds
 # Defaults are picked so copywriter.py can fill the renderable token set directly
 # (story-reel-dark tokens === copywriter.py overlay output). Everything renders at 0 credits.
 PILLAR_PRESETS = {
-    "science":  {"template": "story-reel-dark", "alts": ["carousel-dark", "static-callout-dark"],
+    "science":  {"template": "story-reel-dark", "alts": ["carousel-dark", "static-callout-dark", "story-poll-pro-dark"],
                  "persona": "P1", "slot": "08:00", "platforms": ["instagram", "tiktok", "x"]},
-    "stack":    {"template": "static-compound-dark", "alts": ["carousel-dark"],
+    "stack":    {"template": "static-compound-dark", "alts": ["carousel-dark", "story-product-dark"],
                  "persona": "P1", "slot": "11:00", "platforms": ["instagram", "tiktok"],
                  "product_feature": True},
-    "trending": {"template": "story-reel-dark", "alts": ["carousel-dark"],
+    "trending": {"template": "story-reel-dark", "alts": ["carousel-dark", "story-poll-pro-dark"],
                  "persona": "P3", "slot": "13:00", "platforms": ["instagram", "tiktok"]},
+    # v2 renamed this pillar "Research Spotlight" (was "Social Proof & Results"): physician
+    # validation is REMOVED — all credibility is external published research cited by source.
     "proof":    {"template": "story-reel-dark", "alts": ["static-callout-dark", "carousel-dark"],
                  "persona": "P3", "slot": "16:00", "platforms": ["instagram", "x", "threads"]},
     "founder":  {"template": "story-reel-dark", "alts": ["carousel-dark"],
@@ -86,6 +88,82 @@ PILLAR_PRESETS = {
 CAROUSEL_TEMPLATES = {"carousel-dark", "carousel-light"}
 CAROUSEL_DEFAULT_SLIDES = 5
 
+
+# ── Theme + slot/format wiring (Devon §3.2) ───────────────────────────────────────
+# content.md dark/light rule (authoritative for FORMAT — Marvin 2026-06-21): the MODE is decided
+# by the SLOT, NOT the brand. content.md §9 + §18-20 / SOUL.md:541: the morning feed is LIGHT,
+# midday/evening is DARK (authoritative/stronger). Mapped onto the 5 PT pillar-slots:
+#   science(08:00) + stack(11:00) → light ;  trending(13:00) + proof(16:00) + founder(19:00) → dark.
+# Acme Health keeps its native cream/sage LIGHT identity at EVERY slot (brand hard-constraint),
+# so the slot rule only swings Acme Labs. Replaces the old brand→theme tie (Labs always dark)
+# which contradicted content.md's "Light (morning feed)" for Slot 1.
+LIGHT_PILLARS = {"science", "stack"}     # 08:00 + 11:00 morning slots → light
+
+
+def theme_for(pillar, brand):
+    """content.md dark/light mode for this pillar's slot. Health → always light; Labs → light in
+    the morning slots (science/stack), dark midday/evening (trending/proof/founder)."""
+    if brand == "health":
+        return "light"
+    return "light" if pillar in LIGHT_PILLARS else "dark"
+
+
+def themed(stem, pillar, brand):
+    """Append the content.md dark/light suffix for this pillar's slot (see theme_for)."""
+    return f"{stem}-{theme_for(pillar, brand)}"
+
+
+def retheme(template, pillar, brand):
+    """Force an existing '<stem>-dark|light' template to this pillar's content.md mode. Fixes the
+    old bug where a health-brand post still rendered a -dark template (only carousel was swapped)."""
+    if template.endswith("-dark") or template.endswith("-light"):
+        return themed(template.rsplit("-", 1)[0], pillar, brand)
+    return template
+
+
+# Devon's §3.2 weekly format rotation (CONTENT_ENGINE_GUIDE §3.2). Mon=0 … Sun=6. THIS is what
+# wires each template to its day/slot. 'reel' cells only fire on the pillar's video day
+# (slot_wants_reel / reel_pillar_today); on a non-video day the reel cell falls back to the
+# pillar's image format (handled in daily_image_template). Theme is applied per brand.
+WEEKLY_FORMATS = {
+    "science":  ["carousel", "single",   "reel",         "carousel", "single",   "carousel", "reel"],
+    "stack":    ["carousel", "product",  "carousel",     "compare",  "carousel", "product",  "carousel"],
+    "trending": ["reel",     "carousel", "reel",         "this_or_that", "reel",  "myth_bust","reel"],
+    "proof":    ["carousel", "callout",  "carousel",     "quote",    "carousel", "callout",  "carousel"],
+    "founder":  ["quote",    "callout",  "quote",        "carousel", "callout",  "carousel", "quote"],
+}
+
+# format-of-the-day → template stem (theme appended per brand). 'carousel'/'reel' are special.
+_FORMAT_STEM = {
+    "single": "story-reel", "graphic": "static-compound", "compound": "static-compound",
+    "product": "story-product", "compare": "story-poll-pro", "this_or_that": "story-poll-pro",
+    "poll": "story-poll-pro", "quote": "static-callout", "callout": "static-callout",
+    "myth_bust": "story-reel",
+}
+
+
+def pillar_format_today(pillar, d=None):
+    """Devon's §3.2 format-of-the-day for a pillar (e.g. 'carousel', 'product', 'this_or_that')."""
+    d = d or datetime.now(eng.PT).date()
+    row = WEEKLY_FORMATS.get(pillar)
+    return row[d.weekday()] if row else None
+
+
+def daily_image_template(pillar, brand, d=None, *, product_feature=False):
+    """Resolve the §3.2 format-of-the-day → a concrete IMAGE template + carousel-intent flag
+    (theme by brand). On a 'reel'-format day this returns the pillar's IMAGE fallback (reels are
+    minted separately by the reel path), so a non-video pillar still ships a 0-credit image.
+    Returns (template_name, want_carousel)."""
+    fmt = pillar_format_today(pillar, d)
+    if fmt in (None, "reel"):
+        fmt = "carousel"                       # safe image fallback on reel/unknown days
+    if fmt == "carousel":
+        return themed("carousel", pillar, brand), True
+    stem = _FORMAT_STEM.get(fmt, "static-compound")
+    if stem == "story-product" and not product_feature:
+        stem = "static-compound"               # product card only with a featured compound
+    return themed(stem, pillar, brand), False
+
 # Persona voice hint injected into the copywriter.py topic string (copywriter.py has no persona
 # arg and we don't modify it — backward-compatible). MIGRATION 1A.1 / guide §1.
 PERSONA_VOICE = {
@@ -93,6 +171,34 @@ PERSONA_VOICE = {
     "P2": "Audience: The Health-Forward Affluent Woman — aspirational, premium, outcome/lifestyle-framed.",
     "P3": "Audience: The Curious Newcomer — plain English, curiosity hook, define every term.",
 }
+
+# v2 §1/§3.1 persona targeting (Marvin 2026-06-21, supersedes v1): this engine is LABS-ONLY and
+# targets just TWO personas — The Optimizer (P1, primary) and The Curious Newcomer (P3, secondary).
+# The Health-Forward Affluent Woman (our internal P2) is the FUTURE Acme HEALTH target and is
+# NEVER auto-targeted by Labs content (v2: "Labs content should not be built around her needs";
+# "when in doubt, write for The Optimizer"). Each day's 5 posts cover BOTH active personas: founder
+# is always Optimizer (P1) and trending is always Newcomer (P3) — so P1+P3 are guaranteed daily —
+# while science/stack/proof rotate P1/P3 for variety. Explicit persona= (inbox/bank) still overrides.
+#   even-ordinal day: science P1 · stack P3 · trending P3 · proof P1 · founder P1   → {P1,P3}
+#    odd-ordinal day: science P3 · stack P1 · trending P3 · proof P3 · founder P1   → {P1,P3}
+PERSONA_BY_DAY = {                        # [even, odd] ordinal day — Optimizer(P1)+Newcomer(P3) ONLY
+    "science":  ["P1", "P3"],             # v2: all active personas → rotate Optimizer/Newcomer
+    "stack":    ["P3", "P1"],             # v2: Optimizer + Newcomer
+    "trending": ["P3", "P3"],             # v2: Newcomer (primary) — always
+    "proof":    ["P1", "P3"],             # v2: all active personas (Research Spotlight)
+    "founder":  ["P1", "P1"],             # v2: Optimizer (fixed)
+}
+
+
+def persona_for(pillar, d=None):
+    """The v2 §3.1 persona to target for `pillar` today, rotating between the two ACTIVE Labs
+    personas — Optimizer (P1) + Newcomer (P3) — so both are covered each day (see PERSONA_BY_DAY).
+    Never returns P2 (Affluent Woman = future Health). Falls back to the pillar's preset persona."""
+    d = d or datetime.now(eng.PT).date()
+    row = PERSONA_BY_DAY.get(pillar)
+    if not row:
+        return PILLAR_PRESETS[pillar]["persona"]
+    return row[d.toordinal() % 2]
 
 # Acme compound universe (PRODUCTS.md). Drives product_tie scoring, brand routing,
 # and the class/spec chips on stack (static-compound) briefs.
@@ -147,7 +253,7 @@ MODE_B_FACTORS = ["niche_fit", "persona_fit", "format_adaptability", "buyer_inte
 # classify an extracted post's structure and to map it to a template + reconfigure.
 FORMAT_ARCHETYPES = {
     "this_or_that":   {"keywords": ["vs", "versus", "or", "this or that", "which is better"],
-                       "template": "story-reel-dark", "recipe": "This-or-That comparison"},
+                       "template": "story-poll-pro-dark", "recipe": "This-or-That comparison"},
     "myth_bust":      {"keywords": ["myth", "stop", "wrong", "lie", "don't", "actually", "truth"],
                        "template": "story-reel-dark", "recipe": "Myth-bust: 'Stop X / Start Y'"},
     "wish_i_knew":    {"keywords": ["wish i knew", "before i", "i learned", "things i"],
@@ -252,7 +358,7 @@ def gather_signals(topic, fresh=False):
     """Two cheap searchapi calls (trends + news) -> the raw signals all six §8
     factors are computed from. Robust to missing/empty responses."""
     sig = {"trends_now": None, "trends_slope": None, "news_count": 0,
-           "newest_age": 9999.0, "debate_hits": 0, "snippets": []}
+           "newest_age": 9999.0, "debate_hits": 0, "snippets": [], "news_sources": []}
 
     trends = run_tool("searchapi.py", ["trends", topic], fresh=fresh)
     series = []
@@ -281,6 +387,12 @@ def gather_signals(topic, fresh=False):
         sig["snippets"].append(blob[:200])
         if debate_re.search(blob):
             sig["debate_hits"] += 1
+        # Capture the actual article URL so Mode A topics carry real sources (Task 3, Marvin
+        # 2026-06-20): every brief must show where it came from, even topic-discovery ones.
+        link = item.get("link") or item.get("url")
+        if link and len(sig["news_sources"]) < 5:
+            sig["news_sources"].append({"url": link, "title": item.get("title", ""),
+                                        "source": item.get("source", ""), "platform": "news"})
     return sig
 
 
@@ -319,7 +431,7 @@ def score_topic(topic, sig, topic_weights):
             "weighted": weighted, "topic_weight": tw, "final": weighted * tw,
             "signals": {"trends_now": sig["trends_now"], "trends_slope": sig["trends_slope"],
                         "news_count": sig["news_count"], "newest_age_days": round(sig["newest_age"], 1),
-                        "debate_hits": sig["debate_hits"]}}
+                        "debate_hits": sig["debate_hits"], "news_sources": sig.get("news_sources", [])}}
 
 
 def _catalog_match(topic):
@@ -553,11 +665,11 @@ def next_job_id(reserved=None):
 
 
 def route_brand(topic, pillar):
-    """Labs (RUO, organic) by default; Health for metabolic/results *angles* only.
-    A compound/SKU feature (stack pillar) is always a Labs RUO product, even when the
-    compound is metabolic (Semaglutide is a live acmelabs.co RUO SKU). MIGRATION 1A."""
-    if pillar == "proof" and HEALTH_KEYWORDS.search(topic):
-        return "health"
+    """v2 (Marvin 2026-06-21, supersedes v1): this engine is built EXCLUSIVELY for Acme Labs —
+    ALL content is RUO, organic, and links to acmelabs.co. Acme Health (and its Affluent-Woman
+    persona) gets its OWN separate content engine in a future phase, so Labs content is never routed
+    to Health — even metabolic/GLP-1 angles are framed as Labs RUO research. (HEALTH_KEYWORDS is
+    retained for that future Health engine.)"""
     return "labs"
 
 
@@ -578,12 +690,17 @@ def run_copy(topic, brand, platform, product_feature, compound, cls, fresh=False
 
 
 def build_reference(*, url=None, platform="", description="", selection_rationale="",
-                    cloned_format=None, extracted_hook=None, scoring_breakdown=None):
+                    cloned_format=None, extracted_hook=None, scoring_breakdown=None, sources=None):
     """The provenance contract surfaced at approval (F2) and excluded from posts (F1).
-    Records the exact source + WHY it was picked, so a produced post is always traceable
-    back to the video/topic that inspired it. Mode A carries no url."""
+    Records the exact source(s) + WHY it was picked, so a produced post is always traceable.
+    `sources` is a list of {url,title,source,platform} — EVERY brief carries at least one
+    source link (Task 3): Mode B = the cloned post; Mode A = the news articles behind the topic."""
     ref = {"url": url, "platform": platform, "description": description,
-           "selection_rationale": selection_rationale, "scoring_breakdown": scoring_breakdown or {}}
+           "selection_rationale": selection_rationale, "scoring_breakdown": scoring_breakdown or {},
+           "sources": list(sources or [])}
+    # The primary url is always the first source too (so the card lists everything uniformly).
+    if url and not any(s.get("url") == url for s in ref["sources"]):
+        ref["sources"].insert(0, {"url": url, "title": description[:80], "platform": platform})
     if cloned_format:
         ref["cloned_format"] = cloned_format
     if extracted_hook:
@@ -600,17 +717,29 @@ def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
     carousel=N (or a carousel-* template) -> a full N-slide deck: copywriter.py --carousel writes
     slides.json and the brief points post.py at it. Otherwise a single branded card."""
     preset = PILLAR_PRESETS[pillar]
-    persona = persona or preset["persona"]
+    persona = persona or persona_for(pillar)
     brand = brand or route_brand(topic, pillar)
-    template = template or preset["template"]
     product_feature = preset.get("product_feature", False)
     compound = _catalog_match(topic)
     cls = COMPOUND_CATALOG.get(compound, {}).get("cls") if compound else None
 
+    # SLOT/FORMAT WIRING (Devon §3.2): when the caller forces neither a template NOR a carousel,
+    # pick the pillar's format-of-the-day (carousel / single / product / compare / quote …) and
+    # map it to the right template. This is what routes story-product onto stack product days and
+    # story-poll-pro onto trending this-or-that / stack compare days. Explicit template= or
+    # carousel=N (manual overrides, outlier/inbox/bank clones) bypass the rotation.
+    if template is None and carousel is None:
+        template, fmt_wants_carousel = daily_image_template(
+            pillar, brand, product_feature=product_feature)
+        if fmt_wants_carousel:
+            carousel = CAROUSEL_DEFAULT_SLIDES
+    template = template or preset["template"]
+    template = retheme(template, pillar, brand)  # content.md mode by slot (morning light / eve dark)
+
     # Carousel intent: an explicit N, or a carousel-* template was chosen.
     want_carousel = bool(carousel) or template in CAROUSEL_TEMPLATES
     if want_carousel and template not in CAROUSEL_TEMPLATES:
-        template = "carousel-light" if brand == "health" else "carousel-dark"
+        template = themed("carousel", pillar, brand)
     n_slides = carousel or CAROUSEL_DEFAULT_SLIDES
 
     job_id = job_id or next_job_id()
@@ -676,6 +805,7 @@ def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
          "reference": _ref,
          # Flat mirrors so legacy readers (e.g. F4 telegram._source) still resolve the source.
          "source_url": _ref.get("url"), "source_platform": _ref.get("platform"),
+         "source_urls": [s.get("url") for s in _ref.get("sources", []) if s.get("url")],
          "cloned_format": _ref.get("cloned_format"), **(provenance or {})},
         ensure_ascii=False, indent=2))
 
@@ -713,17 +843,24 @@ def slot_wants_reel(pillar, d=None):
 def assemble_reel_brief(pillar, topic, *, persona=None, brand=None, reference=None,
                         script=None, job_id=None, dry_run=False, fresh=False):
     """Produce one type=reel brief.json (RV1). The reel chain fills the rest later:
-    RV2 writes brief.script, RV3 the generated b-roll into brief.video, RV4 caption_data.json.
-    Here we fix the concept — topic/pillar/persona/brand/reference + the branded M5 COVER
-    tokens (story-reel template, same overlay tokens copywriter already emits) — so GATE 1
-    can approve the concept BEFORE any Higgsfield credit."""
+    RV2 writes brief.script, RV3 the generated CLEAN b-roll into brief.video. There is NO
+    caption-burn step in the overlay model — reel.py composites brief.overlay (a transparent
+    brand template) over the clean video (produce.py --video-underlay), so the caption lives
+    in the template, never burned in. Here we fix the concept — topic/pillar/persona/brand/
+    reference + the brand OVERLAY tokens (reel-overlay-broll template, same tokens copywriter
+    already emits) — so GATE 1 can approve the concept BEFORE any Higgsfield credit."""
     preset = PILLAR_PRESETS[pillar]
-    persona = persona or preset["persona"]
+    persona = persona or persona_for(pillar)
     brand = brand or route_brand(topic, pillar)
     product_feature = preset.get("product_feature", False)
     compound = _catalog_match(topic)
     cls = COMPOUND_CATALOG.get(compound, {}).get("cls") if compound else None
-    cover_tpl = "story-reel-light" if brand == "health" else "story-reel-dark"
+    # Video-underlay overlay model (Marvin 2026-06-20): the engine generates b-roll only
+    # (no talking-head — reel_video.py), so the default overlay is the molecular b-roll family.
+    # Theme follows content.md's SLOT rule (theme_for): a science-day reel (08:00) is light, a
+    # trending-day reel (13:00) is dark; Health stays light. The studio/person-on-camera overlay
+    # (reel-overlay-studio-*) is for MANUAL founder reels with real talking-head footage.
+    overlay_tpl = f"reel-overlay-broll-{theme_for(pillar, brand)}"
 
     job_id = job_id or next_job_id()
     if not eng.is_video_day():   # alternating-day cadence (Marvin 2026-06-19) — note, don't block a manual override
@@ -737,7 +874,8 @@ def assemble_reel_brief(pillar, topic, *, persona=None, brand=None, reference=No
         # Reels have a fixed video distribution: TikTok + X + YouTube (video-only). IG is
         # skipped by publish.py until Meta is connected; YouTube takes video only.
         "platforms": ["tiktok", "x", "youtube"],
-        "caption_data": "caption_data.json",  # authored in RV4 from the TTS word-timings
+        # No caption_data: the overlay model carries the caption as static template text
+        # (brief.overlay below), composited over the clean video — never burned in.
     }
     if compound:
         brief["compound"] = compound
@@ -755,7 +893,7 @@ def assemble_reel_brief(pillar, topic, *, persona=None, brand=None, reference=No
 
     if dry_run:
         log(f"DRY-RUN would assemble REEL {job_id}: {pillar}/{persona}/{brand} "
-            f"[{cover_tpl}] <- {topic[:60]!r}")
+            f"[{overlay_tpl}] <- {topic[:60]!r}")
         return brief
 
     job_dir = JOBS_DIR / job_id
@@ -767,12 +905,12 @@ def assemble_reel_brief(pillar, topic, *, persona=None, brand=None, reference=No
     if not isinstance(cp, dict) or not cp:
         log(f"copywriter.py failed for {job_id} — cover tokens minimal (re-run copywriter.py later)")
         cp = {}
-    cover = {"template": f"templates/src/{cover_tpl}.html",
-             **_map_tokens(cover_tpl, cp, brand, compound, product_feature)}
-    # Labs reels: surface RUO in the cover eyebrow (schema convention + §5 QC).
+    overlay = {"template": f"templates/src/{overlay_tpl}.html",
+               **_map_tokens(overlay_tpl, cp, brand, compound, product_feature)}
+    # Labs reels: surface RUO in the overlay eyebrow (schema convention + §5 QC).
     if brand == "labs":
-        cover["EYEBROW"] = "RESEARCH USE ONLY"
-    brief["cover"] = cover
+        overlay["EYEBROW"] = "RESEARCH USE ONLY"
+    brief["overlay"] = overlay
 
     (job_dir / "brief.json").write_text(json.dumps(brief, ensure_ascii=False, indent=2))
     if cp:
@@ -781,6 +919,7 @@ def assemble_reel_brief(pillar, topic, *, persona=None, brand=None, reference=No
     (job_dir / "research.json").write_text(json.dumps(
         {"job_id": job_id, "discovered_at": now_iso(), "type": "reel", "reference": _ref,
          "source_url": _ref.get("url"), "source_platform": _ref.get("platform"),
+         "source_urls": [s.get("url") for s in _ref.get("sources", []) if s.get("url")],
          "cloned_format": _ref.get("cloned_format")},
         ensure_ascii=False, indent=2))
 
@@ -795,7 +934,11 @@ def _map_tokens(template, cp, brand, compound, product_feature):
     bn = cp.get("BRAND_NAME") or ("ACME HEALTH" if brand == "health" else "ACME LABS")
     handle = cp.get("HANDLE") or ("@acmehealth" if brand == "health" else "@acmelabs")
     ruo = "RUO · NOT FOR HUMAN CONSUMPTION"
-    if template in ("story-reel-dark", "story-reel-light"):
+    # story-reel (legacy cover/overlay) AND the new video-underlay reel overlays share the
+    # exact same token set, so copywriter.py fills either with one mapping.
+    if template in ("story-reel-dark", "story-reel-light",
+                    "reel-overlay-studio-dark", "reel-overlay-studio-light",
+                    "reel-overlay-broll-dark", "reel-overlay-broll-light"):
         return {"BRAND_NAME": bn, "EYEBROW": cp.get("EYEBROW", "RESEARCH"),
                 "HOOK_LINE_1": cp.get("HOOK_LINE_1", ""), "HOOK_LINE_2_ITALIC": cp.get("HOOK_LINE_2_ITALIC", ""),
                 "HOOK_LINE_3": cp.get("HOOK_LINE_3", ""), "SUBTITLE_TEXT": cp.get("SUBTITLE_TEXT", ""),
@@ -813,6 +956,51 @@ def _map_tokens(template, cp, brand, compound, product_feature):
                 "STAT": cp.get("HOOK_LINE_2_ITALIC", ""), "STAT_LABEL": cp.get("SUBTITLE_TEXT", ""),
                 "SOURCE": "Peer-reviewed research", "TAGLINE": cp.get("HOOK_LINE_3", ""),
                 "RUO_LINE": ruo if product_feature else "", "HANDLE": handle}
+    tagline = "HORMONES · LONGEVITY · PERFORMANCE" if brand == "health" else "PEPTIDES · PERFORMANCE · LONGEVITY"
+    if template in ("story-product-dark", "story-product-light"):
+        # Product-announcement / restock story card — fills from the compound catalog. Rich rows
+        # default to lab-standard facts; override per-product via brief.image.set. PRODUCT_IMAGE
+        # defaults to a generic vial — pass a real product photo for a specific SKU.
+        info = COMPOUND_CATALOG.get(compound, {})
+        sku = info.get("sku", "")
+        return {"BRAND_NAME": bn, "BRAND_TAGLINE": tagline, "HANDLE": handle,
+                "EYEBROW_NUM": "01", "EYEBROW": "DROP · RESTOCK", "STATUS_CHIP": "IN STOCK",
+                "HEADLINE_EM": cp.get("HOOK_LINE_2_ITALIC") or "Featured", "HEADLINE_1": "—",
+                "HEADLINE_2": (f"{compound}." if compound else cp.get("HOOK_LINE_3", "")),
+                "SUBCTX": cp.get("SUBTITLE_TEXT", ""),
+                # No product photos yet (Marvin 2026-06-20) — leave PRODUCT_IMAGE empty so the
+                # card shows a labelled placeholder (the compound name); pass a real per-SKU photo
+                # via brief.image.set["PRODUCT_IMAGE"] when available.
+                "PRODUCT_IMAGE": "",
+                "PLACEHOLDER_LABEL": (f"{compound} · image pending" if compound else "Product image pending"),
+                "LOT": "RESEARCH GRADE", "COA_CHIP": "COA AVAILABLE",
+                "SKU": (f"PRODUCT · {sku.upper()}" if sku else "PRODUCT"),
+                "COMPOUND": compound or "", "DOSE": info.get("spec", ""),
+                "PRICE": info.get("price", ""), "PRICE_UNIT": "/ VIAL", "RUO_LINE": ruo,
+                "SPEC1_TAG": "PURITY", "SPEC1_TEXT": "≥99% HPLC purity verified by US 3rd-party lab. COA on every lot.",
+                "SPEC2_TAG": "CLASS", "SPEC2_TEXT": info.get("cls", "Research compound"),
+                "SPEC3_TAG": "FORM", "SPEC3_TEXT": info.get("spec", "Lyophilized · cold-chain shipped, 48-hr to door."),
+                "SPEC4_TAG": "STANDARD", "SPEC4_TEXT": "Batch-traceable, independent COA on file — same standard, every lot.",
+                "CALLOUT_QUOTE": "Same lab standard on every lot. Every Acme vial ships with its independent COA — never marketing claims alone.",
+                "CALLOUT_SRC": "INDEPENDENT US LAB", "CTA_LABEL": "BROWSE CATALOG",
+                "FOOTER_ACTION": "TAP TO SHOP", "PAGE": "1 / 1"}
+    if template in ("story-poll-pro-dark", "story-poll-pro-light"):
+        # Engagement poll / this-or-that story card. The hook fills from copywriter; the poll
+        # options + icon rows default to a BPC-157↔Semaglutide compare — override per-poll via
+        # brief.image.set (full autonomous poll generation is a copywriter follow-up).
+        return {"BRAND_NAME": bn, "BRAND_TAGLINE": tagline, "HANDLE": handle,
+                "EYEBROW_NUM": "01", "EYEBROW": "QUICK QUESTION · POLL",
+                "HOOK_LINE_1": cp.get("HOOK_LINE_1", ""), "HOOK_LINE_2_ITALIC": cp.get("HOOK_LINE_2_ITALIC", ""),
+                "HOOK_LINE_3": cp.get("HOOK_LINE_3", ""), "SUBCTX": cp.get("SUBTITLE_TEXT", ""),
+                "ROW1_TAG": "STRUCTURE", "ROW1_TEXT": "BPC-157 is a 15-aa pentadecapeptide. Semaglutide is a 31-aa GLP-1 analog.",
+                "ROW2_TAG": "EVIDENCE", "ROW2_TEXT": "Both have human-trial data; BPC-157 is broader in soft-tissue research.",
+                "ROW3_TAG": "PURITY", "ROW3_TEXT": "≥99% HPLC, US 3rd-party COA, batch-traceable — same standard, both vials.",
+                "ROW4_TAG": "PROTOCOL", "ROW4_TEXT": "Different cycles: 4-week sprint vs. weekly titration. Pick what fits.",
+                "TAP_LABEL": "TAP TO VOTE",
+                "POLL_A_NAME": "BPC-157", "POLL_A_META": "PENTADECAPEPTIDE · 5MG",
+                "POLL_B_NAME": "SEMAGLUTIDE", "POLL_B_META": "GLP-1 ANALOG · 5MG",
+                "CALLOUT_QUOTE": "Both are research compounds. Verified standard, traceable lot, COA on file.",
+                "CALLOUT_SRC": "ACME LAB STANDARD · 2026", "FOOTER_ACTION": "SWIPE TO ANSWER", "PAGE": "1 / 1"}
     # carousel-dark/light: single-card fallback (full slides.json is a copywriter.py follow-up)
     return {"BRAND_NAME": bn, "EYEBROW": cp.get("EYEBROW", "RESEARCH"),
             "HEAD_1": cp.get("HOOK_LINE_1", ""), "HEAD_2_ITALIC": cp.get("HOOK_LINE_2_ITALIC", ""),
@@ -931,9 +1119,12 @@ def cmd_topics(args):
             selection_rationale=(f"Top SOUL §8 score {s['final']:.2f} (velocity "
                                  f"{s['raw']['trending_velocity']:.2f}, search {s['raw']['search_volume']:.2f}, "
                                  f"recency {s['raw']['recency']:.2f}); newest signal {sig['newest_age_days']}d ago."),
-            scoring_breakdown=s)
+            scoring_breakdown=s, sources=sig.get("news_sources"))
         prov = {"discovery_mode": "A_topic", "selected_topic": s["topic"]}
-        brief = assemble_brief(pillar, topic, job_id=jid, provenance=prov, reference=ref,
+        # --no-carousel forces the pillar's single-card default; otherwise None lets assemble_brief
+        # run Devon's §3.2 format-of-the-day rotation (carousel / single / product / compare …).
+        tmpl = PILLAR_PRESETS[pillar]["template"] if getattr(args, "single", False) else None
+        brief = assemble_brief(pillar, topic, template=tmpl, job_id=jid, provenance=prov, reference=ref,
                                carousel=getattr(args, "carousel", None), fresh=args.fresh)
         store.add_discovery(platform="searchapi", content_type="topic",
                             caption=s["topic"], format_type=pillar,
@@ -1124,6 +1315,62 @@ def cmd_bank(args):
     log(f"Source Bank: minted {made} brief(s) from {rec['source_id']}")
 
 
+def _reel_made_today():
+    """True if the autonomous reel step already minted a reel today (idempotency marker)."""
+    return eng.read_state().get("last_reel_created_date") == eng.today_pt()
+
+
+def _mark_reel_made_today():
+    st = eng.read_state()
+    st["last_reel_created_date"] = eng.today_pt()
+    eng.write_state(st)
+
+
+def cmd_reel_today(args):
+    """AUTONOMOUS daily reel (F7): on a VIDEO day, mint EXACTLY ONE type=reel brief for the day's
+    reel pillar (alternating trending<->science — `reel_pillar_today`). Topic = the top SOUL §8
+    scored compound for the pillar (0 extraction cost — the cached searchapi data Mode A already
+    uses). Idempotent: skips if a reel was already minted today. On a non-video day it creates
+    NOTHING. 0 Higgsfield credits here — the reel still passes GATE 1 (concept approval) + REELS_LIVE
+    + the 135 real-credit/day cap before any generation spends."""
+    pillar = args.pillar or reel_pillar_today()
+    if pillar is None:                       # not a video day
+        if not args.force:
+            log("not a video day (alternating cadence) — no reel today")
+            return
+        pillar = REEL_PILLARS[0]             # --force on a non-video day → the lead reel pillar
+    if not args.force and _reel_made_today():
+        log("a reel was already minted today — skipping (use --force to add another)")
+        return
+
+    es = load_engine_state()
+    tw = es.get("topic_weights", {})
+    candidates = sorted(tw, key=tw.get, reverse=True)[:5] or list(COMPOUND_CATALOG)[:3]
+    log(f"reel-today [{pillar}] — scoring {len(candidates)} candidates for the day's reel topic")
+    scored = discover_topics(candidates, es, fresh=args.fresh)
+    if not scored:
+        log("no topic survived scoring — no reel today")
+        return
+    s = scored[0]
+    topic = f"{s['topic']} research"
+    jid = next_job_id()
+    ref = build_reference(
+        platform="topic-discovery",
+        description=f"Autonomous reel topic: {s['topic']} (SOUL §8 {s['final']:.2f})",
+        selection_rationale=(f"Top-scored compound for the {pillar} reel on a video day "
+                             f"(alternating cadence)."),
+        scoring_breakdown=s, sources=s.get("signals", {}).get("news_sources"))
+    if args.dry_run:
+        log(f"DRY-RUN would mint reel [{pillar}] -> {jid}: {topic!r}")
+        return
+    brief = assemble_reel_brief(pillar, topic, job_id=jid, reference=ref, fresh=args.fresh)
+    DiscoveryStore().add_brief(pillar=pillar, persona=brief["persona"], format_type="reel",
+                               hook_angle=topic, scoring_breakdown=s, job_id=jid, reference=ref,
+                               brief_path=str(JOBS_DIR / jid / "brief.json"))
+    _mark_reel_made_today()
+    log(f"AUTONOMOUS reel minted [{pillar}] -> {jid}: {topic!r} (enters PHASE A → GATE 1)")
+
+
 def main():
     ap = argparse.ArgumentParser(prog="research", description="Acme F3 Research module (0 Higgsfield credits)")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1175,17 +1422,27 @@ def main():
     pbk.add_argument("--fresh", action="store_true", help="Bypass the API cache")
     pbk.set_defaults(func=cmd_bank)
 
+    prt = sub.add_parser("reel-today", help="F7 AUTONOMOUS: on a video day, mint the day's reel brief (alternating cadence)")
+    prt.add_argument("--pillar", choices=list(PILLAR_PRESETS), help="Force the reel pillar (default: today's alternating pillar)")
+    prt.add_argument("--force", action="store_true", help="Mint even on a non-video day / even if one was already minted today")
+    prt.add_argument("--dry-run", action="store_true", help="Score + decide only; write no brief")
+    prt.add_argument("--fresh", action="store_true", help="Bypass the API cache")
+    prt.set_defaults(func=cmd_reel_today)
+
     pr = sub.add_parser("run", help="Full day: assemble briefs across pillars (topics + outliers)")
     pr.add_argument("--select", type=int, default=4, help="Mode A topics to select (default 4; +1 trending from outliers)")
     pr.add_argument("--carousel", nargs="?", type=int, const=CAROUSEL_DEFAULT_SLIDES, metavar="N",
-                    help="Make the Mode-A (Science/Stack) briefs full N-slide carousels. Default N=5.")
+                    help="FORCE every Mode-A brief to a full N-slide carousel (default N=5). "
+                         "Without this flag the engine follows Devon's §3.2 format-of-the-day rotation.")
+    pr.add_argument("--no-carousel", dest="single", action="store_true",
+                    help="FORCE single cards (the pillar's default template) instead of the rotation/carousels.")
     pr.add_argument("--dry-run", action="store_true")
     pr.add_argument("--fresh", action="store_true")
     pr.set_defaults(func=lambda a: (cmd_topics(argparse.Namespace(
-        candidates=None, select=a.select, pillar=None, carousel=a.carousel,
+        candidates=None, select=a.select, pillar=None, carousel=a.carousel, single=a.single,
         dry_run=a.dry_run, fresh=a.fresh)),
         cmd_outliers(argparse.Namespace(query=None, num=15, extract=True,
-                                        carousel=a.carousel,
+                                        carousel=a.carousel, single=a.single,
                                         dry_run=a.dry_run, fresh=a.fresh))))
 
     args = ap.parse_args()

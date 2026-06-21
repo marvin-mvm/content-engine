@@ -1,15 +1,22 @@
 """
 reel.py — Acme brief-driven reel runner (M4 -> M5), 0 Higgsfield credits.
 
-Turns a job folder (brief.json + caption_data.json + a source video) into a
-captioned, branded reel — no hand-editing of the composition HTML. This is the
-A2 "wrap it" deliverable: the judgment step (transcribe + author the caption
-beats into caption_data.json) stays manual; everything downstream is mechanical
-and repeatable here.
+Turns a job folder into a finished, branded reel — no hand-editing of HTML. Two
+models, auto-selected by the brief:
+
+  • OVERLAY (default, Marvin 2026-06-20) — brief.overlay present. The caption lives
+    in a TRANSPARENT brand template (reel-overlay-* family) composited over the CLEAN
+    video (brief.video) by produce.py --video-underlay. The caption is NEVER burned
+    into the video — it sits in the template, exactly as the template is designed.
+    No caption_data.json / hyperframes needed. Writes <job>/<job_id>-final.mp4 + thumb.png.
+
+  • LEGACY burned-in (brief.cover + caption_data.json) — word-synced karaoke captions
+    rendered INTO the video via hyperframes-captions, then a branded cover poster. Kept
+    for reels that still want burned, time-synced captions.
 
 Usage:
-    python3 reel.py output/jobs/ACME-007            # job dir with brief.json + caption_data.json
-    python3 reel.py output/jobs/ACME-007 --skip-cover   # captions only, no M5 cover
+    python3 reel.py output/jobs/ACME-007            # auto-detects overlay vs legacy
+    python3 reel.py output/jobs/ACME-007 --skip-cover   # legacy only: captions, no M5 cover
 
 Job folder contract:
     brief.json          # M1 contract (see schemas/brief.schema.json)
@@ -69,6 +76,66 @@ def run(cmd, cwd=None) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
 
 
+def run_overlay_reel(job, brief, overlay):
+    """NEW reel model (Marvin 2026-06-20): caption lives in the brand TEMPLATE OVERLAY,
+    never burned into the video. The clean source video (brief.video — reel_video.py keeps
+    it caption-free by design) is the underlay; produce.py --video-underlay renders the
+    overlay template as a transparent RGBA layer and composites it over every frame.
+
+    Contract — brief.overlay:
+        { "template": "templates/src/reel-overlay-broll-dark.html",
+          "EYEBROW": "...", "BRAND_NAME": "ACME LABS",
+          "HOOK_LINE_1": "...", "HOOK_LINE_2_ITALIC": "...", "HOOK_LINE_3": "...",
+          "SUBTITLE_TEXT": "...", "CTA_LABEL": "...", "HANDLE": "@acmelabs" }
+
+    No caption_data.json / hyperframes needed — that's the legacy burned-in path.
+    """
+    template = overlay.get("template")
+    if not template or not (WORKSPACE / template).exists():
+        fail(f"brief.overlay.template missing or not found: {template!r}")
+    if "video" not in brief:
+        fail("overlay reel needs brief.video (the clean source video underlay)")
+    video_src = (WORKSPACE / brief["video"]).resolve()
+    if not video_src.exists():
+        fail(f"source video not found: {video_src}")
+
+    final = job / f"{brief['job_id']}-final.mp4"
+    cmd = ["python3", PRODUCE, template, str(final), "--video-underlay", str(video_src), "--no-log"]
+    # reel-overlay templates CONTAIN the video in a design window (top:20% left:18% right:18%
+    # bottom:20% of 1080×1920 = 692×1152 at 194,384); the caption sits OUTSIDE that box. Place
+    # the clean video into the window; the band colour follows the theme.
+    if "reel-overlay" in template:
+        is_light = template.endswith("-light.html")
+        cmd += ["--window", "194,384,692,1152", "--band", "#F2EDE4" if is_light else "#1A2E1E"]
+    # Synced spoken captions: overlay the script, timed to the narration (voiceover) length.
+    script = brief.get("script", "").strip()
+    narr = job / "narration.wav"
+    if script:
+        cmd += ["--captions-script", script]
+        if narr.exists():
+            pr = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                 "-of", "default=nw=1:nk=1", str(narr)], capture_output=True, text=True)
+            try:
+                cmd += ["--captions-dur", f"{float(pr.stdout.strip()):.2f}"]
+            except ValueError:
+                pass
+    for k, v in overlay.items():
+        if k == "template":
+            continue
+        cmd += ["--set", f"{k}={v}"]
+    r = run(cmd, cwd=WORKSPACE)
+    if r.returncode != 0 or not final.exists():
+        fail(f"produce.py --video-underlay failed:\n{(r.stdout + r.stderr)[-1500:]}")
+
+    # Relocate the standalone poster produce.py drops in output/ → job/thumb.png.
+    thumbs = sorted((WORKSPACE / "output").glob(f"{Path(template).stem}-*-thumb.png"))
+    if thumbs:
+        shutil.move(str(thumbs[-1]), str(job / "thumb.png"))
+    print(f"[reel] overlay composited (clean video + template caption) -> {final}", file=sys.stderr)
+    print(f"final={final}")
+    print(f"thumb={job / 'thumb.png'}")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Acme brief-driven reel runner (M4->M5)")
     ap.add_argument("job_dir", help="Job folder containing brief.json + caption_data.json")
@@ -84,6 +151,14 @@ def main():
     brief = json.loads(brief_path.read_text())
     if brief.get("type") != "reel":
         fail(f"brief type is {brief.get('type')!r}; reel.py only handles type=reel")
+
+    # ── NEW video-underlay overlay model: caption in the template, clean video underlay ──
+    overlay = brief.get("overlay")
+    if overlay:
+        run_overlay_reel(job, brief, overlay)
+        return
+
+    # ── LEGACY burned-in caption model (hyperframes karaoke captions) ──
     cap_name = brief.get("caption_data", "caption_data.json")
     cap_path = job / cap_name
     if not cap_path.exists():

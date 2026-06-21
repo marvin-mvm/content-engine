@@ -403,8 +403,12 @@ def cmd_run(args):
         else:
             before = {p.name for p in e.JOBS_DIR.glob("ACME-*")}
             rargs = [PY, RESEARCH, "run", "--select", str(args.posts)]
-            if args.carousel:
+            # Carousel mode (Devon §3.2): default 'rotate' = format-of-the-day per pillar/day;
+            # 'carousel' forces decks; 'single' forces single cards.
+            if args.carousel_mode == "carousel":
                 rargs.append("--carousel")
+            elif args.carousel_mode == "single":
+                rargs.append("--no-carousel")
             if args.dry_run:
                 rargs.append("--dry-run")
             if args.fresh:
@@ -419,6 +423,20 @@ def cmd_run(args):
             e.log(f"research produced {len(new_ids)} new job(s): {new_ids}")
     else:
         new_ids = []
+
+    # F7 autonomous reel (alternating-day cadence, Marvin 2026-06-19): on a VIDEO day, mint the
+    # day's reel brief so sweep_reels below carries it through GATE 1. No-op on non-video days.
+    # 0 credits here — generation still needs GATE 1 + REELS_LIVE + the 135-credit/day cap.
+    if not args.skip_research:
+        if e.is_video_day():
+            e.log("video day → research reel-today (minting the day's reel brief)")
+            rt = subprocess.run([PY, RESEARCH, "reel-today"] + (["--dry-run"] if args.dry_run else []),
+                                capture_output=True, text=True)
+            sys.stderr.write(rt.stderr)
+            if rt.returncode != 0:
+                e.log("reel-today failed — see stderr above. Continuing.")
+        else:
+            e.log("not a video day (alternating cadence) — no reel created today")
 
     if args.dry_run:
         e.log("DRY-RUN: research scored/printed; no render, no captions, no manifest.")
@@ -514,8 +532,10 @@ def main():
     pr = sub.add_parser("run", help="Full morning produce: research -> render -> captions -> manifest")
     pr.add_argument("--posts", type=int, default=4,
                     help="Mode-A topics to select (default 4; research adds +1 trending -> ~5/day)")
-    pr.add_argument("--no-carousel", dest="carousel", action="store_false",
-                    help="Render single cards instead of full carousel decks")
+    pr.add_argument("--carousel", dest="carousel_mode", action="store_const", const="carousel",
+                    help="FORCE every daily image to a carousel deck (overrides Devon's §3.2 rotation)")
+    pr.add_argument("--no-carousel", dest="carousel_mode", action="store_const", const="single",
+                    help="FORCE single cards instead of the rotation / carousels")
     pr.add_argument("--skip-research", action="store_true",
                     help="Skip the research sweep (package only briefs already on disk)")
     pr.add_argument("--dry-run", action="store_true", help="Score/print only; no render/captions/manifest")
@@ -524,7 +544,7 @@ def main():
     pr.add_argument("--generate-reels", action="store_true",
                     help="Let concept-approved reels SPEND on RV3 generation (still needs REELS_LIVE "
                          "+ a per-reel concept approval + the 6 credits/day cap). Default: RV3 dry-run, 0 credits.")
-    pr.set_defaults(carousel=True, func=cmd_run)
+    pr.set_defaults(carousel_mode="rotate", func=cmd_run)
 
     prl = sub.add_parser("reel", help="F7: advance ONE reel through its phases (RV2 -> GATE 1 -> RV3 -> RV4 -> GATE 2)")
     prl.add_argument("job_dir")

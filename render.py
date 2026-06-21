@@ -128,7 +128,16 @@ def detect_size(html: str) -> tuple[int, int]:
     return 1080, 1920
 
 
-def render(template_path: str, output_path: str, values: dict, bg_path: str | None = None) -> str:
+def render(template_path: str, output_path: str, values: dict, bg_path: str | None = None,
+           transparent: bool = False) -> str:
+    """Render an Acme template to PNG.
+
+    transparent=True keeps the page's empty areas transparent (RGBA PNG with an
+    alpha channel) — used for the video-underlay reel overlays, where the centre
+    of the frame must show the video through and only the scrims/text/logo are
+    painted. The overlay templates declare transparent backgrounds themselves;
+    omit_background then captures that as real alpha instead of white.
+    """
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -164,13 +173,14 @@ def render(template_path: str, output_path: str, values: dict, bg_path: str | No
             page.screenshot(
                 path=output_path,
                 clip={"x": 0, "y": 0, "width": w, "height": h},
+                omit_background=transparent,
             )
             browser.close()
     finally:
         if tmp.exists():
             tmp.unlink()
 
-    print(f"[render] {w}×{h} → {output_path}", file=sys.stderr)
+    print(f"[render] {w}×{h}{' (transparent)' if transparent else ''} → {output_path}", file=sys.stderr)
     return output_path
 
 
@@ -189,6 +199,9 @@ def main():
                     help="JSON file with placeholder key/value pairs")
     ap.add_argument("--bg", metavar="FILE", dest="bg_path",
                     help="Background image (local path) to composite behind the template")
+    ap.add_argument("--transparent", action="store_true",
+                    help="Render with a transparent background (RGBA PNG) — for video-underlay "
+                         "reel overlays where the video must show through the centre of the frame")
     ap.add_argument("--tokens", action="store_true",
                     help="Print the list of {{TOKEN}} placeholders in the template and exit")
     args = ap.parse_args()
@@ -218,7 +231,7 @@ def main():
     else:
         output = args.output
 
-    render(args.template, output, values, bg_path=args.bg_path)
+    render(args.template, output, values, bg_path=args.bg_path, transparent=args.transparent)
     print(output)
 
 

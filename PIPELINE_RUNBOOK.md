@@ -15,6 +15,11 @@
 > **First proofs:** reel → `output/jobs/ACME-007/` (Nova "Metabolic Support Stack" review);
 > image → `output/jobs/ACME-008/` (Semaglutide compound feature), plus the A3 QC set in
 > `output/a3_qc/` covering every template family.
+>
+> **NEW templates (2026-06-20):** the post-overlay template families (reel video-underlay, story
+> product/poll, premium carousel) and their wiring status live in **[TEMPLATES.md](TEMPLATES.md)**.
+> Headline change: **reels now carry the caption in a transparent template OVERLAY composited over
+> the clean video (`produce.py --video-underlay`) — never burned in.** Details in TEMPLATES.md.
 
 ---
 

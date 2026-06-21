@@ -3,10 +3,13 @@ produce.py — Acme full production pipeline
 
 Orchestrates: brand prompt injection → Higgsfield image → download → render.py HTML overlay → final PNG.
 With --video: also renders the template as a thumbnail and embeds it into the mp4 as cover art.
+With --video-underlay: renders the template as a TRANSPARENT overlay and composites it over a CLEAN
+video (the reel video-underlay model — caption lives in the template, never burned into the video).
 
 Usage:
     python3 produce.py <template> [--bg-prompt "..."] [--bg-file path.jpg] [--set KEY=VALUE ...] [--json data.json]
-    python3 produce.py <template> --video reel.mp4 [--set KEY=VALUE ...]
+    python3 produce.py <template> --video reel.mp4 [--set KEY=VALUE ...]              # cover-art only
+    python3 produce.py <template> --video-underlay clean.mp4 [--set KEY=VALUE ...]    # overlay over video
 
 Examples:
     # Full pipeline: generate Higgsfield bg, composite HTML template on top
@@ -215,6 +218,108 @@ def bg_generate(prompt: str, model: str, aspect: str, source: str = "auto") -> s
     return higgsfield_generate(prompt, model=model, aspect=aspect)
 
 
+def composite_overlay(video_path: str, overlay_png: str, output_path: str,
+                      w: int = 1080, h: int = 1920, window=None, band: str = "#1A2E1E") -> str:
+    """Composite a transparent brand overlay PNG over a CLEAN video underlay.
+
+    This is the video-underlay reel model (Marvin 2026-06-20): the caption/brand
+    chrome lives in the template overlay and the video stays clean, never burned.
+
+    Two layouts:
+      • window=(x,y,wd,ht): the video is CONTAINED in that box (the template's design
+        window), scaled to COVER the box; the opaque template band (drawn by the
+        overlay PNG) frames it and the caption sits OUTSIDE the box. The brand-colour
+        `band` fills the base behind the bands.
+      • window=None: full-frame — video covers the whole WxH frame, overlay on top.
+    Audio is copied through when present.
+    """
+    if window:
+        wx, wy, ww, wh = window
+        bandhex = "0x" + band.lstrip("#")
+        vf = (f"[0:v]scale={ww}:{wh}:force_original_aspect_ratio=increase,crop={ww}:{wh},setsar=1[v];"
+              f"[2:v][v]overlay={wx}:{wy}:shortest=1[base];"
+              f"[base][1:v]overlay=0:0:format=auto[o]")
+        cmd = [
+            "ffmpeg", "-y", "-i", video_path, "-i", overlay_png,
+            "-f", "lavfi", "-i", f"color=c={bandhex}:s={w}x{h}",
+            "-filter_complex", vf, "-map", "[o]", "-map", "0:a?",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "medium",
+            "-c:a", "copy", "-movflags", "+faststart", output_path,
+        ]
+    else:
+        vf = (f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
+              f"crop={w}:{h},setsar=1[bg];[bg][1:v]overlay=0:0:format=auto[v]")
+        cmd = [
+            "ffmpeg", "-y", "-i", video_path, "-i", overlay_png,
+            "-filter_complex", vf, "-map", "[v]", "-map", "0:a?",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "medium",
+            "-c:a", "copy", "-movflags", "+faststart", output_path,
+        ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        sys.exit(f"[produce] ffmpeg overlay composite failed:\n{result.stderr[-800:]}")
+    where = f"into window {window}" if window else "over full frame"
+    print(f"[produce] overlay composited {where} → {output_path}", file=sys.stderr)
+    return output_path
+
+
+CAPTION_TEMPLATE = str(WORKSPACE / "templates" / "src" / "reel-caption-overlay.html")
+
+
+def burn_synced_captions(video_path: str, script: str, duration: float, output_path: str,
+                         cap_dir: str, template: str = CAPTION_TEMPLATE) -> str:
+    """Overlay the spoken script as SYNCED captions on the reel (this ffmpeg has no libass, so
+    captions are timed transparent PNG overlays, not SRT/ASS). The script is split into short
+    sentence-aware phrases, each timed proportionally across the narration `duration`, rendered
+    as a brand caption pill, and overlaid only during its time window. The video/audio underneath
+    is untouched — the caption rides the brand overlay, never burned into the source b-roll."""
+    words = script.split()
+    if not words:
+        return video_path
+    segs, cur = [], []
+    for w in words:
+        cur.append(w)
+        if len(cur) >= 6 or w.endswith((".", "!", "?")):
+            segs.append(" ".join(cur)); cur = []
+    if cur:
+        segs.append(" ".join(cur))
+    tot = len(words)
+    capd = Path(cap_dir); capd.mkdir(parents=True, exist_ok=True)
+    items, t = [], 0.0
+    for i, s in enumerate(segs):
+        d = duration * len(s.split()) / tot
+        a, b = t, t + d; t = b
+        png = str(capd / f"cap_{i:02d}.png")
+        render(template, png, {"CAP_TEXT": s}, transparent=True)
+        items.append((png, a, b))
+
+    inputs, fc, prev = ["-i", video_path], [], "0:v"
+    for idx, (png, a, b) in enumerate(items):
+        inputs += ["-i", png]
+        lbl = f"v{idx}"
+        fc.append(f"[{prev}][{idx + 1}:v]overlay=0:0:enable='between(t,{a:.2f},{b:.2f})'[{lbl}]")
+        prev = lbl
+    cmd = ["ffmpeg", "-y", *inputs, "-filter_complex", ";".join(fc), "-map", f"[{prev}]",
+           "-map", "0:a?", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "medium",
+           "-c:a", "copy", "-movflags", "+faststart", output_path]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit(f"[produce] caption burn failed:\n{r.stderr[-600:]}")
+    print(f"[produce] burned {len(items)} synced captions → {output_path}", file=sys.stderr)
+    return output_path
+
+
+def first_frame(video_path: str, png_out: str) -> str:
+    """Grab the first frame of a video as a PNG (poster/thumbnail for Blotato)."""
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-i", video_path, "-frames:v", "1", "-update", "1", png_out],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        print(f"[produce] WARN: poster extract failed:\n{result.stderr[-400:]}", file=sys.stderr)
+    return png_out
+
+
 def attach_thumbnail(video_path: str, thumb_path: str, output_path: str) -> str:
     """Embed a PNG as cover-art (attached_pic) in an mp4 and save to output_path."""
     result = subprocess.run(
@@ -274,6 +379,19 @@ def main():
 
     ap.add_argument("--video", metavar="FILE",
                     help="Source .mp4 reel — renders template as thumbnail and embeds it as cover art")
+    ap.add_argument("--video-underlay", metavar="FILE", dest="video_underlay",
+                    help="Source CLEAN .mp4 — renders the template as a TRANSPARENT overlay and "
+                         "composites it over every frame (caption in the template, video stays clean). "
+                         "The video-underlay reel model; distinct from --video (cover art only).")
+    ap.add_argument("--window", metavar="X,Y,W,H",
+                    help="With --video-underlay: place the video INSIDE this box (the template's "
+                         "design window) instead of full-frame, so the caption sits OUTSIDE the video.")
+    ap.add_argument("--band", default="#1A2E1E", metavar="#HEX",
+                    help="Brand band colour behind a windowed composite (default deep forest; use cream for light).")
+    ap.add_argument("--captions-script", metavar="TEXT",
+                    help="With --video-underlay: overlay this spoken script as SYNCED captions on the reel.")
+    ap.add_argument("--captions-dur", type=float, metavar="SECONDS",
+                    help="Narration duration the captions sync across (default: the video duration).")
     ap.add_argument("--carousel", metavar="FILE", dest="carousel_file",
                     help="JSON array of per-slide token dicts — renders one PNG per slide "
                          "(slide-01.png …). --set / --json values are merged into every slide; "
@@ -344,6 +462,51 @@ def main():
                       remarks=f"Carousel ({total} slides)")
         for out in outputs:
             print(out)
+        return
+
+    # ── Video-underlay mode: render TRANSPARENT overlay → composite over clean video ──
+    if args.video_underlay:
+        overlay_png = str(OUTPUT_DIR / f"{stem}-{ts}-overlay.png")
+        thumb_path = str(OUTPUT_DIR / f"{stem}-{ts}-thumb.png")
+        mp4_out = args.output or str(OUTPUT_DIR / f"{stem}-{ts}.mp4")
+
+        # 1. Render the brand template as a transparent RGBA overlay (no bg injection).
+        render(args.template, overlay_png, values, transparent=True)
+        # 2. Composite it: into the template window if given, else full-frame.
+        window = None
+        if args.window:
+            try:
+                window = tuple(int(n) for n in args.window.split(","))
+                assert len(window) == 4
+            except (ValueError, AssertionError):
+                sys.exit(f"[produce] --window must be 'X,Y,W,H' integers, got {args.window!r}")
+        composite_overlay(args.video_underlay, overlay_png, mp4_out, window=window, band=args.band)
+        # 2b. Synced spoken captions (timed PNG overlays) on top of the composite.
+        if args.captions_script:
+            import shutil as _sh
+            dur = args.captions_dur
+            if not dur:
+                pr = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                     "-of", "default=nw=1:nk=1", mp4_out], capture_output=True, text=True)
+                try:
+                    dur = float(pr.stdout.strip())
+                except ValueError:
+                    dur = 30.0
+            capped = str(OUTPUT_DIR / f"{stem}-{ts}-capped.mp4")
+            burn_synced_captions(mp4_out, args.captions_script, dur, capped,
+                                 cap_dir=str(OUTPUT_DIR / f"{stem}-{ts}-caps"))
+            _sh.move(capped, mp4_out)
+        # 3. Poster = the composited first frame; embed it as cover art for Blotato.
+        first_frame(mp4_out, thumb_path)
+
+        if not args.no_log:
+            log_asset(media=mp4_out, topic=args.topic or derive_topic(values),
+                      prompt=args.prompt or args.video_underlay or "", stage="Production",
+                      status="Generated", remarks="Reel (clean video underlay + template overlay caption)")
+
+        print(f"video={mp4_out}")
+        print(f"overlay={overlay_png}")
+        print(f"thumb={thumb_path}")
         return
 
     # ── Video mode: render thumbnail → embed in mp4 ───────────────────────────

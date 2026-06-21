@@ -90,8 +90,9 @@ def _source(job_dir: Path, brief: dict) -> str:
     """Short discovery-source label for the card."""
     ref = _reference(job_dir, brief)
     plat = ref.get("platform")
+    n_src = len([s for s in (ref.get("sources") or []) if s.get("url")])
     if plat == "topic-discovery":
-        return "topic discovery"
+        return f"topic discovery · {n_src} source link{'s' if n_src != 1 else ''}" if n_src else "topic discovery"
     if plat:
         fmt = ref.get("cloned_format")
         return f"{plat}" + (f" · cloned {fmt}" if fmt else "")
@@ -125,12 +126,22 @@ def build_card(job_dir: Path) -> str:
         f"• Slot (PT): {st.get('slot', '—')}   • Platforms: {', '.join(sorted(captions))}",
         f"• Source: {_source(job_dir, brief)}",
     ]
-    # Reference provenance — Mode B has the exact reviewable source video/URL; Mode A
-    # (topic discovery) has only the selection rationale. NOT part of the post — review only.
+    # Reference provenance — EVERY brief carries source link(s) now (Task 3): Mode B = the cloned
+    # post; Mode A = the news articles behind the topic. NOT part of the post — review only.
+    src_links = []
     if ref.get("url"):
-        desc = ref.get("description") or ref.get("platform") or "source"
-        lines.append(f"📎 Reference: {desc}")
-        lines.append(f"   {ref['url']}")
+        src_links.append((ref.get("description") or ref.get("platform") or "source", ref["url"]))
+    for s in (ref.get("sources") or []):
+        u = s.get("url")
+        if u and not any(u == existing for _, existing in src_links):
+            src_links.append((s.get("title") or s.get("source") or s.get("platform") or "source", u))
+    if src_links:
+        lines.append(f"📎 Source{'s' if len(src_links) > 1 else ''} ({len(src_links)}):")
+        for title, url in src_links[:5]:
+            label = (title[:58] + "…") if len(title) > 58 else title
+            lines.append(f"   • {label} — {url}" if label else f"   • {url}")
+        if ref.get("selection_rationale"):
+            lines.append(f"   ↳ {ref['selection_rationale']}")
     elif ref.get("selection_rationale"):
         lines.append(f"📎 Why: {ref['selection_rationale']}")
     lines += [

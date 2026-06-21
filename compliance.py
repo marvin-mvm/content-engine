@@ -46,6 +46,7 @@ RED_RE = re.compile(
     | \byou(?:'ll|\s+will)\s+(?:feel|see|notice|experience|get|lose|gain|grow)\b
     | \bproven\s+to\b
     | \bguarantee[sd]?\b
+    | \b(?:our|acme'?s)\s+(?:doctor|physician|md|clinician|medical\s+(?:team|advisor|advisors|director|expert|experts))\b   # v2 §9: never name/imply a physician acting FOR Acme / medical validation as our own
     | \b(?:miracle|breakthrough|game[-\s]?changer|anti[-\s]?cancer)\b
     """,
     re.IGNORECASE | re.VERBOSE,

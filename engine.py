@@ -518,6 +518,10 @@ def rejected_lessons_text(kind: str | None = None, limit: int = 12) -> str:
 
 
 # ── SOUL §16 trust-score events (engine_state.json) ──────────────────────────────
+# GOVERNANCE (Marvin 2026-06-21): the Implementation-Guide SOP makes Telegram approval mandatory
+# on EVERY post, permanently (Stage 4 / Task 25). The trust score is a QUALITY SIGNAL ONLY — it
+# must NEVER gate or bypass publishing. The phase/score is intentionally not read by schedule.py
+# or publish_slot.py (both publish only status=approved jobs). Do NOT wire phases to auto-publish.
 SCORE_EVENTS = {
     "approved": 8,            # approved, no revisions
     "approved_revised": 3,    # approved after 1 revision

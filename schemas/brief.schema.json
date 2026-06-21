@@ -33,6 +33,23 @@
         "HANDLE": { "type": "string" }
       }
     },
+    "overlay": {
+      "type": "object",
+      "description": "REEL only, video-underlay model (Marvin 2026-06-20): the caption/brand chrome lives in a TRANSPARENT template overlay composited over the CLEAN video (brief.video) by produce.py --video-underlay — the caption is NEVER burned into the video. Default reel path now; presence of 'overlay' makes reel.py skip the legacy caption_data/hyperframes burn. Template is a reel-overlay-* family file.",
+      "required": ["template", "BRAND_NAME", "EYEBROW", "HOOK_LINE_1", "HOOK_LINE_2_ITALIC", "HOOK_LINE_3", "SUBTITLE_TEXT", "CTA_LABEL", "HANDLE"],
+      "additionalProperties": true,
+      "properties": {
+        "template": { "type": "string", "description": "e.g. templates/src/reel-overlay-broll-dark.html (engine default) or reel-overlay-studio-dark.html (manual talking-head)" },
+        "BRAND_NAME": { "type": "string" },
+        "EYEBROW": { "type": "string", "description": "Labs RUO reels: carry the RUO line here, e.g. RESEARCH USE ONLY" },
+        "HOOK_LINE_1": { "type": "string" },
+        "HOOK_LINE_2_ITALIC": { "type": "string" },
+        "HOOK_LINE_3": { "type": "string" },
+        "SUBTITLE_TEXT": { "type": "string" },
+        "CTA_LABEL": { "type": "string" },
+        "HANDLE": { "type": "string" }
+      }
+    },
     "image": {
       "type": "object",
       "description": "IMAGE only: drives post.py (M5). bg_policy is plain|reuse ONLY — post.py never generates (0 credits). Green Cormorant-italic emphasis is allowed/expected on these designed templates (the all-cream rule is captions-only).",

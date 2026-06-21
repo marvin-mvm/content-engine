@@ -102,6 +102,48 @@ def main():
           seq3 == ["higgsfield", "higgsfield", "blotato"] * 2)
     del os.environ["ENGINE_IMAGE_BLOTATO_EVERY"]
 
+    # 7 — AUTONOMOUS reel minting (research.cmd_reel_today): gated by the cadence + idempotent,
+    #     and it reaches topic-scoring ONLY when it should. discover_topics is stubbed (no network,
+    #     no brief written: an empty result makes cmd_reel_today return right after the gate).
+    import argparse
+    e.ENGINE_STATE.write_text(json.dumps({}))  # marker lives in engine_state (temp)
+    calls = {"discover": 0}
+    r.discover_topics = lambda candidates, es, fresh=False: (calls.__setitem__("discover", calls["discover"] + 1) or [])
+
+    check("_reel_made_today False before minting", not r._reel_made_today())
+    r._mark_reel_made_today()
+    check("_reel_made_today True after marking", r._reel_made_today())
+
+    def _args(**kw):
+        return argparse.Namespace(pillar=kw.get("pillar"), force=kw.get("force", False),
+                                  dry_run=True, fresh=False)
+
+    # non-video day → skip BEFORE scoring (no network, no brief).
+    r.reel_pillar_today = lambda d=None: None
+    calls["discover"] = 0
+    r.cmd_reel_today(_args())
+    check("non-video day → skips before scoring", calls["discover"] == 0)
+
+    # video day but already minted today → skip BEFORE scoring (idempotent).
+    r.reel_pillar_today = lambda d=None: "trending"
+    r._mark_reel_made_today()
+    calls["discover"] = 0
+    r.cmd_reel_today(_args())
+    check("already minted today → skips before scoring", calls["discover"] == 0)
+
+    # video day, not yet minted → proceeds to scoring (exactly one reel/day).
+    e.ENGINE_STATE.write_text(json.dumps({}))
+    calls["discover"] = 0
+    r.cmd_reel_today(_args())
+    check("video day, not yet minted → proceeds to scoring", calls["discover"] == 1)
+
+    # --force on a non-video day still proceeds (manual override).
+    r.reel_pillar_today = lambda d=None: None
+    e.ENGINE_STATE.write_text(json.dumps({}))
+    calls["discover"] = 0
+    r.cmd_reel_today(_args(force=True))
+    check("--force on a non-video day → proceeds to scoring", calls["discover"] == 1)
+
     print(f"\n{PASS} passed, {FAIL} failed")
     sys.exit(1 if FAIL else 0)
 
