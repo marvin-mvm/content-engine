@@ -309,7 +309,15 @@ def handle_reel(job_dir: Path, *, generate: bool = False, dry_run_push: bool = F
         return st
 
     # ── PHASE B — concept approved → generate → caption → final review ──
-    if concept_ok or st == "concept_approved":
+    if concept_ok or st in ("concept_approved", "revise"):
+        # A FINAL-gate REVISE must RE-RENDER, not silently re-push the stale artifact — the reel
+        # REVISE no-op bug (Marvin 2026-06-21, ACME-021): without this, handle_reel finds the
+        # leftover <job>-final.mp4, skips RV4, and pushes the SAME video back. Drop the stale
+        # render (and any captioned.mp4) so RV4 below regenerates the reel from the current brief.
+        if st == "revise":
+            (job_dir / f"{job_id}-final.mp4").unlink(missing_ok=True)
+            (job_dir / "captioned.mp4").unlink(missing_ok=True)
+            e.log(f"{job_id}: REVISE → cleared stale render; re-rendering from current brief")
         side = e.load_json(job_dir / "reel_video.json") or {}
         if not brief.get("video"):
             if side.get("status") == "pending":            # async Seedance job in flight → poll
@@ -362,6 +370,40 @@ def handle_reel(job_dir: Path, *, generate: bool = False, dry_run_push: bool = F
     return "awaiting_concept"
 
 
+def reproduce_revised_images() -> list[str]:
+    """Re-produce every status=revise IMAGE job — the image REVISE re-render path (Marvin
+    2026-06-21; mirrors the reel revise fix). For each: regenerate the copy from the reviewer's
+    note (research.py recopy), drop the stale PNGs so it actually re-renders, then re-render +
+    re-caption + re-push for review. Without this a revised image was orphaned (could never publish
+    — publish needs status=approved — and nothing regenerated it). 0 Higgsfield credits."""
+    done = []
+    for jd in sorted(e.JOBS_DIR.glob("ACME-*")):
+        brief = e.load_json(jd / "brief.json")
+        if not isinstance(brief, dict) or brief.get("type") != "image":
+            continue
+        st = e.read_status(jd.name) or {}
+        if st.get("status") != "revise":
+            continue
+        job_id = jd.name
+        note = st.get("review_note") or ""
+        pillar, brand = brief.get("pillar", ""), brief.get("brand", "labs")
+        slot = st.get("slot") or e.PILLAR_SLOT.get(pillar)
+        e.log(f"{job_id}: REVISE → re-producing image (note: {note[:80]!r})")
+        if _sub([PY, RESEARCH, "recopy", str(jd)] + (["--note", note] if note else [])).returncode != 0:
+            e.log(f"{job_id}: recopy failed — leaving at revise for next run")
+            continue
+        for png in list(jd.glob(f"{job_id}-slide-*.png")) + [jd / f"{job_id}.png"]:
+            png.unlink(missing_ok=True)                 # stale render would otherwise be reused
+        if not package_job(jd, pillar, brand, slot):
+            e.log(f"{job_id}: re-render failed — leaving for next run")
+            continue
+        _sub([PY, TELEGRAM, "push", str(jd)])
+        e.write_status(job_id, "pushed", pillar=pillar, brand=brand, slot=slot,
+                       slot_date=e.today_pt(), pushed_at=e.now_iso())
+        done.append(job_id)
+    return done
+
+
 def sweep_reels(*, generate: bool = False, dry_run_push: bool = False, force: bool = False) -> list[str]:
     """Advance every reel job that isn't in a waiting/terminal state (the loop's reel pass)."""
     advanced = []
@@ -398,10 +440,28 @@ def cmd_run(args):
     # Budget-gate the research sweep (searchapi + the one apify outlier extract). The
     # per-call teeth are on copywriter.py below; research.py caches its API calls (24h/7d).
     if not args.skip_research:
+        before = {p.name for p in e.JOBS_DIR.glob("ACME-*")}
+        # Manual Telegram link-drops first (v2 Stage 1 "manual_save", ANY user): drain ONE into the
+        # Trending pillar. research.py drops has its own apify-budget gate + does nothing if none are
+        # pending; when it lands a Trending brief we pass --no-outliers so the drop REPLACES the
+        # YouTube outlier for today's 13:00 slot (no collision, no wasted extraction).
+        drop_used = False
+        try:
+            import drops as _drops
+            if _drops.pending(limit=1):
+                dargs = ([PY, RESEARCH, "drops", "--max", "1"]
+                         + (["--dry-run"] if args.dry_run else [])
+                         + (["--fresh"] if args.fresh else []))
+                e.log("manual link-drop(s) pending → draining one into Trending")
+                dr = subprocess.run(dargs, capture_output=True, text=True)
+                sys.stderr.write(dr.stderr)
+                drop_used = bool({p.name for p in e.JOBS_DIR.glob("ACME-*")} - before)
+        except Exception as ex:                       # a drop hiccup must never break the morning produce
+            e.log(f"drop drain skipped (non-fatal): {ex}")
+
         if not e.spend("searchapi", 1) or not e.spend("apify", 1):
             e.log("research sweep skipped — searchapi/apify daily cap reached.")
         else:
-            before = {p.name for p in e.JOBS_DIR.glob("ACME-*")}
             rargs = [PY, RESEARCH, "run", "--select", str(args.posts)]
             # Carousel mode (Devon §3.2): default 'rotate' = format-of-the-day per pillar/day;
             # 'carousel' forces decks; 'single' forces single cards.
@@ -409,6 +469,8 @@ def cmd_run(args):
                 rargs.append("--carousel")
             elif args.carousel_mode == "single":
                 rargs.append("--no-carousel")
+            if drop_used:
+                rargs.append("--no-outliers")          # a manual drop already filled Trending today
             if args.dry_run:
                 rargs.append("--dry-run")
             if args.fresh:
@@ -418,9 +480,10 @@ def cmd_run(args):
             sys.stderr.write(r.stderr)
             if r.returncode != 0:
                 e.log("research.py run failed — see stderr above. Continuing with any new briefs.")
-            after = {p.name for p in e.JOBS_DIR.glob("ACME-*")}
-            new_ids = sorted(after - before)
-            e.log(f"research produced {len(new_ids)} new job(s): {new_ids}")
+                e.alert(f"⚠️ Acme produce: research.py run failed (rc={r.returncode}). {(r.stderr or '')[-400:].strip()}")
+        after = {p.name for p in e.JOBS_DIR.glob("ACME-*")}
+        new_ids = sorted(after - before)
+        e.log(f"research produced {len(new_ids)} new job(s): {new_ids}")
     else:
         new_ids = []
 
@@ -448,6 +511,11 @@ def cmd_run(args):
     advanced = sweep_reels(generate=args.generate_reels)
     if advanced:
         e.log(f"reels advanced: {advanced}")
+
+    # Image REVISE re-production: regenerate + re-push any status=revise image (mirrors reels).
+    reproduced = reproduce_revised_images()
+    if reproduced:
+        e.log(f"revised images re-produced: {reproduced}")
 
     # Collect the new image briefs.
     jobs = []
@@ -480,9 +548,15 @@ def cmd_run(args):
     e.write_manifest(slotted, date)
     e.log(f"PRODUCE done: {len(ready)}/{len(slotted)} review-ready, {len(held)} held. "
           f"Manifest -> {e.manifest_path(date)}")
+    failed = []
     for j in slotted:
         st = e.read_status(j["job_id"]) or {}
         e.log(f"  {j['job_id']}  slot={j['slot']}  pillar={j['pillar']}  status={st.get('status')}")
+        if st.get("status") == "failed":
+            failed.append(j["job_id"])
+    # v2 error-handling: a stage failure pings Marvin (don't let a bad render pass silently).
+    if failed:
+        e.alert(f"⚠️ Acme produce: {len(failed)} job(s) FAILED to render/caption today: {', '.join(failed)}")
 
 
 def cmd_captions(args):
@@ -569,4 +643,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    e.guard_main("produce", main)

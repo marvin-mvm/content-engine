@@ -41,6 +41,9 @@ from pathlib import Path
 
 OUTPUT_DIR = Path(__file__).parent / "output"
 FONT_WAIT_MS = 1800  # wait for Google Fonts to load
+SUPERSAMPLE = 2      # render at N× device pixels, then downscale (Lanczos) to native.
+                     # Chromium's 1× screenshots alias thin strokes (1px chip borders) and
+                     # small type into rough/"cracked" edges; 2× supersampling fixes that.
 
 # Root-div background colors for the two Acme themes
 _BG_COLORS = re.compile(r"background:\s*(#(?:1A2E1E|F2EDE4))", re.IGNORECASE)
@@ -160,18 +163,28 @@ def render(template_path: str, output_path: str, values: dict, bg_path: str | No
     w, h = detect_size(html)
 
     # Write substituted HTML next to the template so relative asset paths
-    # (../../assets/acme-leaf.svg) resolve from the same directory.
+    # (../../assets/acme-logo-icon.svg) resolve from the same directory.
     tmp = template.parent / f"_render_tmp_{os.getpid()}.html"
+    # Supersample: render at N× device pixels, then downscale to native with Lanczos for
+    # crisp text/borders. Needs Pillow; without it we fall back to a native 1× screenshot.
+    ss = SUPERSAMPLE
+    if ss > 1:
+        try:
+            from PIL import Image
+        except ImportError:
+            print("[render] Pillow not installed — rendering at 1× (text will be softer). "
+                  "pip3 install pillow to enable supersampling.", file=sys.stderr)
+            ss = 1
     try:
         tmp.write_text(html, encoding="utf-8")
 
         with sync_playwright() as p:
             browser = p.chromium.launch()
-            page = browser.new_page(viewport={"width": w, "height": h})
+            page = browser.new_page(viewport={"width": w, "height": h}, device_scale_factor=ss)
             page.goto(tmp.as_uri(), wait_until="networkidle")
             page.wait_for_timeout(FONT_WAIT_MS)
-            page.screenshot(
-                path=output_path,
+            shot = page.screenshot(
+                path=None if ss > 1 else output_path,  # at N× grab bytes, downscale below
                 clip={"x": 0, "y": 0, "width": w, "height": h},
                 omit_background=transparent,
             )
@@ -180,7 +193,13 @@ def render(template_path: str, output_path: str, values: dict, bg_path: str | No
         if tmp.exists():
             tmp.unlink()
 
-    print(f"[render] {w}×{h}{' (transparent)' if transparent else ''} → {output_path}", file=sys.stderr)
+    if ss > 1:
+        import io
+        # screenshot is w·ss × h·ss; Lanczos back to native preserves alpha for transparent overlays
+        Image.open(io.BytesIO(shot)).resize((w, h), Image.LANCZOS).save(output_path)
+
+    print(f"[render] {w}×{h}{f' ({ss}×SSAA)' if ss > 1 else ''}"
+          f"{' (transparent)' if transparent else ''} → {output_path}", file=sys.stderr)
     return output_path
 
 

@@ -35,6 +35,8 @@ RED_RE = re.compile(
     | \b(?:fixes|fixing)\b
     | \brevers\w*\s+(?:the\s+)?(?:age?ing|age)\b              # reverses ageing
     | \b(?:burns?|burning)\s+fat\b | \bfat[-\s]?burning\b
+    | \b(?:lose|drop|shed)\s+\d+\s*(?:lb|lbs|pound|pounds|kg|kilo\w*)\b      # v2 §9: "lose 20 pounds" — weight-loss outcome promise (banned on IG/TikTok)
+    | \b(?:melts?|torch\w*|incinerat\w*|blasts?)\s+(?:away\s+)?(?:fat|pounds|weight)\b   # "melts fat" hype (research framing is fine: "studied for fat metabolism")
     | \bbuilds?\s+(?:lean\s+)?muscle\b | \bmuscle[-\s]?building\b
     | \bregrow(?:s|n|ing)?\s+(?:your\s+)?hair\b | \bhair\s+regrowth\b
     | \b(?:boosts?|increases?|raises?|elevates?)\s+(?:your\s+)?testosterone\b

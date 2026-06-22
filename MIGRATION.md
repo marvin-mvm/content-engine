@@ -354,17 +354,37 @@ reviewable, surface it at approval time, and **never leak it into the published 
 > Sequencing: the **F3-producer half is done**; the **Supabase columns + F2 surfacing + F1 publish
 > guard** land with F2/F1 work, after F4 (in flight in a parallel session).
 
-### IG/FB drop-link extraction — open item (2026-06-18)
+### Social drop-link extraction — Apify + Blotato (2026-06-18, IG verdict corrected 2026-06-21)
 
-`blotato source` only has first-class extractors for **YouTube + TikTok**; any other `http` URL is
-scraped as a generic `article` ([blotato.py](blotato.py)). IG/FB reels are auth-gated + JS-rendered,
-so the binding limit is Meta, not Blotato. **Tested empirically (2026-06-18):** an IG reel through
-`blotato source` returned `type: article` with `title: "Down chevron icon"` and a "summary" that was
-the **login-wall chrome + comment section** ("Log In / Sign Up / Never miss a post…") — **no caption,
-no transcript, no hook.** Verdict: IG **cannot** ride the Blotato link-drop. `apify` stays the only IG
-path (purpose-built actors, fragile per Part 5.1) — and even it should be treated as best-effort.
-Practical guidance: for an IG/FB drop, lead with the **human's one-line note** + `apify scrape`; don't
-route Meta through `blotato source`. (FB not separately tested — same Meta auth wall expected.)
+**Two extractors cover a dropped social link — Apify AND Blotato — and they overlap on the core video
+platforms:**
+
+- **`apify scrape` ([apify.py](apify.py))** — purpose-built actors for **YouTube, Instagram, TikTok,
+  Facebook** (the `ACTORS` map). This is where `research.py` routes social URLs today. Priciest tool
+  (`ENGINE_CAP_APIFY` = 3/day, a fresh paid actor run per URL, no per-URL cache).
+- **`blotato source` ([blotato.py](blotato.py))** — **YouTube + TikTok are first-class and
+  auto-detected** (`cmd_source`). It also accepts an explicit `--type`, passed straight through to
+  Blotato's `create_source` as `sourceType` — so **IG/FB can be extracted through Blotato too** when
+  the type is named. Cheaper than Apify and not on the 3/day cap, so **for YouTube + TikTok, Blotato is
+  the preferred extractor**; reserve Apify for what Blotato can't do.
+
+**IG correction (the old verdict was wrong).** The earlier line — "IG **cannot** ride the Blotato
+link-drop" — was a mis-diagnosis. The 2026-06-18 failure (an IG reel coming back as a login-wall
+`article` with title `"Down chevron icon"`) was the **auto-detector falling through to
+`sourceType=article`** for the IG URL, NOT a hard Blotato limitation: `blotato.py cmd_source` only
+auto-detects youtube/tiktok/article/text, so an `instagram.com` URL defaults to `article` (the login
+wall). Naming the **explicit Instagram/Facebook type** makes Blotato use the right extractor. So IG/FB
+**can** be link-dropped — via Apify (already wired) or Blotato-with-explicit-type.
+
+**Honest caveat (unchanged):** Meta is auth-gated + JS-rendered, so IG/FB extraction is **best-effort**
+on either tool — treat the result as fragile and lead with the human's one-line note. (Bulk-scraping a
+user's *saved* IG collection is still not viable — that needs login/cookies, Part 5.1 — but a single
+public IG/FB reel URL is fine.)
+
+> **Follow-up (optional, not yet wired):** (1) add `instagram`/`facebook` branches to
+> `blotato.py cmd_source` auto-detect so an IG/FB URL no longer defaults to `article`; (2) route
+> `research.py` YouTube + TikTok drops to the cheaper `blotato source` (keeping Apify as fallback).
+> Both need the exact Blotato `sourceType` strings confirmed against the live API before committing.
 
 ---
 

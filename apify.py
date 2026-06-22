@@ -3,7 +3,7 @@
 Apify CLI for ACME agent.
 Auto-detects platform from URL and fires the right Apify actor via REST API.
 
-Supported platforms: YouTube, Instagram (posts + reels), TikTok, Facebook
+Supported platforms: YouTube, Instagram (posts + reels), TikTok, Facebook, Threads, X/Twitter
 
 Usage:
   apify.py scrape   URL  [--timeout N] [--raw]
@@ -94,6 +94,27 @@ ACTORS = {
             "maxPostComments": 10,
         },
     },
+    # Threads single-post extraction (Marvin 2026-06-21): logical_scrapers/threads-post-scraper
+    # takes post URLs via startUrls (confirmed input schema). Meta-gated like IG/FB; this is the
+    # Apify path for a dropped Threads link.
+    "threads": {
+        "actor": "logical_scrapers~threads-post-scraper",
+        "input": lambda url: {
+            "startUrls": [{"url": url}],
+            "proxyConfiguration": {"useApifyProxy": True},
+        },
+    },
+    # X / Twitter single-post extraction (Marvin 2026-06-22): apidojo/tweet-scraper (Tweet
+    # Scraper V2, pay-per-result) takes a tweet URL via `startUrls` (plain URL strings) + maxItems.
+    # X is a SOCIAL platform → Apify, not Firecrawl (a logged-in JS timeline isn't crawler-clean).
+    # Actor slug + input schema to be confirmed on the first live run (same caution as Threads).
+    "x": {
+        "actor": "apidojo~tweet-scraper",
+        "input": lambda url: {
+            "startUrls": [url],
+            "maxItems": 1,
+        },
+    },
 }
 
 
@@ -120,6 +141,10 @@ def detect_platform(url):
         return "tiktok"
     if "facebook.com" in url_lower or "fb.watch" in url_lower or "fb.com" in url_lower:
         return "facebook"
+    if "threads.net" in url_lower or "threads.com" in url_lower:
+        return "threads"
+    if "twitter.com" in url_lower or "x.com" in url_lower:
+        return "x"
     return None
 
 
@@ -266,11 +291,47 @@ def trim_facebook(item, mode):
     return base
 
 
+def trim_threads(item, mode):
+    # logical_scrapers/threads-post-scraper field names vary; pull the common ones tolerantly.
+    base = {
+        "platform": "threads",
+        "url": item.get("url") or item.get("postUrl") or item.get("permalink"),
+        "published_at": item.get("publishedAt") or item.get("timestamp") or item.get("date"),
+        "likes": item.get("likeCount") or item.get("likes"),
+        "comments_count": item.get("replyCount") or item.get("commentsCount") or item.get("replies"),
+    }
+    if mode == "scrape":
+        base.update({
+            "text": (item.get("text") or item.get("caption") or item.get("content") or "")[:3000],
+        })
+    return base
+
+
+def trim_x(item, mode):
+    # apidojo/tweet-scraper field names vary across versions; pull the common ones tolerantly.
+    base = {
+        "platform": "x",
+        "url": item.get("url") or item.get("twitterUrl") or item.get("tweetUrl"),
+        "published_at": item.get("createdAt") or item.get("created_at") or item.get("date"),
+        "views": item.get("viewCount") or item.get("views"),
+        "likes": item.get("likeCount") or item.get("favoriteCount") or item.get("favorite_count"),
+        "comments_count": item.get("replyCount") or item.get("reply_count") or item.get("replies"),
+        "shares": item.get("retweetCount") or item.get("retweet_count"),
+    }
+    if mode == "scrape":
+        base.update({
+            "text": (item.get("text") or item.get("fullText") or item.get("full_text") or "")[:3000],
+        })
+    return base
+
+
 TRIMMERS = {
     "youtube": trim_youtube,
     "instagram": trim_instagram,
     "tiktok": trim_tiktok,
     "facebook": trim_facebook,
+    "threads": trim_threads,
+    "x": trim_x,
 }
 
 
@@ -278,7 +339,7 @@ def run_command(url, mode, timeout, raw, api_key):
     platform = detect_platform(url)
     if not platform:
         sys.exit(
-            f"ERROR: Unrecognized URL — supported platforms: YouTube, Instagram, TikTok, Facebook.\nURL: {url}"
+            f"ERROR: Unrecognized URL — supported platforms: YouTube, Instagram, TikTok, Facebook, Threads, X/Twitter.\nURL: {url}"
         )
 
     cfg = ACTORS[platform]

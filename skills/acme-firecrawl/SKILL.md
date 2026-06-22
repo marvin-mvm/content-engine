@@ -13,7 +13,8 @@ metadata:
 
 # acme-firecrawl
 
-Articles and web pages only. Social posts → use `acme-apify`.
+Articles, blogs, and web pages only — the **sole** article/website text extractor.
+Social/video posts (YouTube, Instagram, TikTok, Facebook, Threads, X/Twitter) → use `acme-apify`.
 
 ```bash
 acme-firecrawl scrape "URL"                        # extract clean markdown, 8000 char cap

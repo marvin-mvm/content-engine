@@ -198,4 +198,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    e.guard_main("publish", main)

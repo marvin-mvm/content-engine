@@ -62,6 +62,22 @@ def main():
     check("beats break on sentence ends (first beat ends at 'wrong.')",
           blocks[0]["line1"][-1][0] == 4 or (blocks[0]["line2"] and blocks[0]["line2"][-1][0] == 4))
 
+    # ── TTS number normalization (the ACME-041 fix: Kokoro voiced "2.5%" as "five percent") ──
+    check("decimal percent -> full words",
+          rc.tts_normalize("a reduction of 2.5%, compared to 1.9% here")
+          == "a reduction of two point five percent, compared to one point nine percent here")
+    check("integer percent -> words", rc.tts_normalize("up 15% YoY") == "up fifteen percent YoY")
+    check("bare decimal -> words", rc.tts_normalize("about 2.4 kg") == "about two point four kg")
+    check("hundreds + decimal", rc.tts_normalize("100% vs 12.75%")
+          == "one hundred percent vs twelve point seven five percent")
+    check("dose units spelled", rc.tts_normalize("5mg dose") == "5 milligrams dose")
+    check("em dash -> pause comma", rc.tts_normalize("dual agonist—it acts") == "dual agonist, it acts")
+    check("acronyms with digits left ALONE (Kokoro says them fine)",
+          rc.tts_normalize("GLP-1 and GIP via SURPASS-2") == "GLP-1 and GIP via SURPASS-2")
+    check("plain prose is unchanged (no false positives)",
+          rc.tts_normalize("Most people think these are the same drug.")
+          == "Most people think these are the same drug.")
+
     print(f"\n{PASS} passed, {FAIL} failed")
     sys.exit(1 if FAIL else 0)
 

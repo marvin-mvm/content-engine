@@ -1,6 +1,6 @@
 ---
 name: acme-blotato
-description: "Publish to TikTok/Twitter/YouTube and more, generate Blotato visuals from templates, extract transcripts. Auth pre-wired."
+description: "Publish/schedule to TikTok/Twitter/YouTube and more, generate Blotato visuals from templates (backup images). Auth pre-wired. NOT for text extraction — use acme-firecrawl (articles) / acme-apify (social)."
 metadata:
   {
     "openclaw":
@@ -76,14 +76,13 @@ Use the returned `url` as `--media-url` in publish.
 
 Never retry `generate` more than 2x.
 
-## Extract Transcript / Source Content
+## Extract Transcript / Source Content — ⚠️ DEPRECATED
 
-```bash
-acme-blotato source "https://youtube.com/watch?v=..."     # auto-detect: youtube, tiktok, article
-acme-blotato source "https://example.com/article"         # extract article content
-acme-blotato source "text or summary" --type text         # raw text extraction
-```
+**Do not use `acme-blotato source` for extraction.** The engine routes all "read-the-link" work to
+dedicated extractors and Blotato is publish/schedule + backup images only:
 
-Auto-detects type from URL. Blocks-and-waits (~30–120s). Useful for repurposing competitor content.
+- Article / blog / website → **`acme-firecrawl scrape "URL"`** (faithful full markdown)
+- Social / video (YouTube, Instagram, TikTok, Facebook, Threads, X/Twitter) → **`acme-apify scrape "URL"`**
 
-**Output:** `{"id": "SOURCE_ID", "type": "youtube", "summary": "...", "transcript": "...", "title": "..."}`
+The `source` subcommand still exists for ad-hoc manual use, but it returns a capped AI *summary*
+(≤3000 chars), not the real page, and is no longer invoked by any pipeline path.

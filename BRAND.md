@@ -8,4 +8,4 @@
 >
 > **Do not duplicate brand content here.** Edit `SOUL.md`.
 >
-> Open question still pending for Marvin/Devon (carried into SOUL.md's visual-identity note): the `acme-leaf.svg` uses off-palette gradient stops `#607A62`→`#8DA983`/`#ABC09A` — confirm whether to re-render against Bright Accent `#3D9E6E`. Legacy website/app may still use the old Sage/Schibsted token set (`#3f825f`, Schibsted Grotesk) — confirm whether the live site rebranded to the forest system or remains a separate surface.
+> Open question still pending for Marvin/Devon (carried into SOUL.md's visual-identity note): the `acme-logo-icon.svg` uses off-palette gradient stops `#607A62`→`#8DA983`/`#ABC09A` — confirm whether to re-render against Bright Accent `#3D9E6E`. Legacy website/app may still use the old Sage/Schibsted token set (`#3f825f`, Schibsted Grotesk) — confirm whether the live site rebranded to the forest system or remains a separate surface.

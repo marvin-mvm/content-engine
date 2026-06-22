@@ -20,8 +20,9 @@ Usage:
 
 generate:       Create image, carousel, slideshow, or AI video from a template.
                 Polls until the visual is rendered and returns the final URL.
-source:         Extract content/transcript from a URL (YouTube, TikTok, article, etc.)
-                for use as generation input. Polls until complete.
+source:         [DEPRECATED — NOT used by the engine] Extract content/transcript from a URL.
+                The pipeline now extracts via firecrawl.py (articles) / apify.py (social/video);
+                Blotato is publish/schedule + backup image generation only. CLI kept for ad-hoc use.
 upload:         Upload a LOCAL image/video to Blotato and print its public URL
                 (presigned PUT). Required bridge: produce.py/post.py write local
                 files, but publish needs public mediaUrls.
@@ -483,7 +484,7 @@ def main():
     p.add_argument("--raw", action="store_true")
 
     # source
-    p = sub.add_parser("source", help="Extract transcript/summary from a YouTube, TikTok, or article URL")
+    p = sub.add_parser("source", help="[DEPRECATED — not used by the engine; use firecrawl.py/apify.py] Extract transcript/summary from a URL")
     p.add_argument("url_or_text", help="URL or raw text to extract from")
     p.add_argument("--type", dest="source_type", choices=["text","article","youtube","twitter","tiktok","perplexity-query","audio","pdf"], help="Source type (auto-detected if omitted)")
     p.add_argument("--instructions", help="Custom extraction instructions (e.g. 'focus on key takeaways')")

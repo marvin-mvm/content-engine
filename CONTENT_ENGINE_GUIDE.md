@@ -235,7 +235,18 @@ for posts *far above baseline* engagement (velocity + per-follower, not raw view
 r/Peptides, r/longevity, r/Biohackers, r/nootropics; hashtag seed set #longevity #biohacking
 #peptides #GLP1 #NADplus #healthoptimization #antiaging #performanceoptimization #functionalmed
 #longevitylifestyle #biologicalage #hormonehealth #peptidetherapy #longevityhacks. **Plus** the
-drop-a-link inbox (any URL → `apify.py scrape` / `blotato.py source` → hook + structure).
+drop-a-link inbox (any URL → social/video via `apify.py scrape`, article/blog via `firecrawl.py scrape` → hook + structure).
+
+**Sourcing doctrine — the 3-step method (Marvin 2026-06-21; full version acme-engine REFERENCE §8.1):**
+don't mine topic-nouns and hope — mine the *framings* that go viral, because those are the ones we can
+win. **(1) Outlier:** rank by **velocity vs the niche-baseline median**, never raw views; outlier = ≥2×,
+bigger ratio = louder signal. **(2) Throughline:** name the ONE narrative the niche is circling now —
+ours is **"the hype is outrunning the evidence"** (celebrity buzz vs. what studies show); clone the
+throughline, not one post. **(3) Edge/filter:** Acme *is* the evidence side (COA + RUO + sourced), so
+keep only outliers we can answer with **data** (myth-bust / "what it actually does" / "X vs Y" / "the part
+nobody mentions") and **reject anything needing an outcome claim**; clone the hook STRUCTURE
+(`FORMAT_ARCHETYPES`) into an Acme-owned topic, body stays rigorous. The lead `OUTLIER_YT_QUERIES` and
+the throughline statement are a mid-2026 snapshot — refresh them as the conversation shifts.
 
 **Stage 2 scoring — viral opportunities (Mode B, Devon):** niche fit (1–10) · persona fit (1–10) ·
 format adaptability (1–10) · buyer-intent (1–10) · recency +2 (<24h) · curated-link +3.

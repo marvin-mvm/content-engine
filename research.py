@@ -6,14 +6,15 @@ credits. It is the missing front-end of the engine: research finds *what to post
 the existing core (copywriter.py -> post.py / reel.py) renders it.
 
   MODE A — topic discovery  (`research.py topics`)
-    Sweep PubMed/news/trends (searchapi/firecrawl) -> candidate topics, score by the
+    Sweep PubMed/news/trends (searchapi) -> candidate topics, score by the
     six SOUL §8 weights × engine_state topic_weights (respecting blocked_topics),
     print the per-topic breakdown, pick the top N -> brief.json files.
 
   MODE B — viral-outlier mining + format cloning  (`research.py outliers` / `inbox`)
     Find posts whose engagement is far above baseline (YouTube via searchapi —
     view velocity), OR take a dropped link (any platform). Extract the pattern
-    (apify.py scrape / blotato.py source), then RECONFIGURE: rewrite the hook in the
+    (apify.py scrape for social/video, firecrawl.py scrape for articles/blogs/sites),
+    then RECONFIGURE: rewrite the hook in the
     Research-Pharmacist voice via copywriter.py, map the format to a template, STRIP the
     original's claims, apply compliance -> a Trending-Hook brief.json.
     CLONE THE STRUCTURE, NEVER THE CONTENT.
@@ -23,10 +24,13 @@ persona + brand), validate against schemas/brief.schema.json, and log discovery 
 a local JSON store (discovery_queue + daily_brief). Marvin's call (2026-06-18):
 local-JSON-first — a Supabase db.py can replace DiscoveryStore additively later.
 
-The shared tools (searchapi.py/firecrawl.py/apify.py/blotato.py/copywriter.py) are called
-as black-box subprocesses and never modified. Every paid call is cached under
-output/research/cache/ (24h TTL) so re-runs don't re-spend — apify is the priciest
-call, so Mode B fires it once per URL only.
+The shared tools (searchapi.py/firecrawl.py/apify.py/copywriter.py) are called as
+black-box subprocesses and never modified. EXTRACTION routing ("read inside a link"):
+article/blog/website -> firecrawl.py scrape; social/video (YouTube, Instagram, TikTok,
+Facebook, Threads, X/Twitter) -> apify.py scrape. Blotato is publish/schedule + backup image
+generation ONLY — never text extraction. Every paid call is cached under
+output/research/cache/ (apify/firecrawl banked at a 7-day TTL) so re-runs don't re-spend;
+Mode B fires the paid scrape once per URL only.
 
 Usage:
   research.py topics  [--candidates A,B] [--select K] [--pillar P] [--dry-run] [--fresh]
@@ -42,6 +46,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import re
 import subprocess
 import sys
@@ -53,6 +58,10 @@ import engine as eng  # shared core — content cadence (alternating-day video) 
 
 import source_bank  # RV0 — full-transcript harvest & angle reuse (0 extraction cost)
 import engine as eng  # decision-ledger feedback: skip topics a human previously REJECTED
+try:
+    import product_images  # real SKU photos → PRODUCT_IMAGE token / Higgsfield reference
+except Exception:           # never let a missing asset tree break a produce run
+    product_images = None
 
 WS = Path(__file__).parent.resolve()
 PY = sys.executable or "python3"
@@ -137,14 +146,18 @@ WEEKLY_FORMATS = {
 _FORMAT_STEM = {
     "single": "story-reel", "graphic": "static-compound", "compound": "static-compound",
     "product": "story-product", "compare": "story-poll-pro", "this_or_that": "story-poll-pro",
-    "poll": "story-poll-pro", "quote": "static-callout", "callout": "static-callout",
+    # A founder "quote" is a STATEMENT card, not a stat — static-callout's big STAT field is sized
+    # for a short number ("14.9%"), so a multi-word quote overflowed and overlapped the label/source
+    # (Marvin 2026-06-21 system test, ACME-040/036). Statements render correctly on story-reel.
+    # "callout" stays static-callout (the proof/stat card) — feed it a real short stat.
+    "poll": "story-poll-pro", "quote": "story-reel", "callout": "static-callout",
     "myth_bust": "story-reel",
 }
 
 
 def pillar_format_today(pillar, d=None):
     """Devon's §3.2 format-of-the-day for a pillar (e.g. 'carousel', 'product', 'this_or_that')."""
-    d = d or datetime.now(eng.PT).date()
+    d = d or eng.today_date()
     row = WEEKLY_FORMATS.get(pillar)
     return row[d.weekday()] if row else None
 
@@ -194,39 +207,140 @@ def persona_for(pillar, d=None):
     """The v2 §3.1 persona to target for `pillar` today, rotating between the two ACTIVE Labs
     personas — Optimizer (P1) + Newcomer (P3) — so both are covered each day (see PERSONA_BY_DAY).
     Never returns P2 (Affluent Woman = future Health). Falls back to the pillar's preset persona."""
-    d = d or datetime.now(eng.PT).date()
+    d = d or eng.today_date()
     row = PERSONA_BY_DAY.get(pillar)
     if not row:
         return PILLAR_PRESETS[pillar]["persona"]
     return row[d.toordinal() % 2]
 
+
+# v2 §2/§3.1: ONE post per pillar per day across all FIVE pillars. The daily `run` builds the four
+# non-trending pillars from Mode-A topic discovery (trending comes from Mode B outliers/drops). The
+# OLD rule assigned every topic to science|stack by compound-match, so proof + founder were NEVER
+# produced and compound-heavy days were all stack (bug found 2026-06-21). plan_pillar_briefs spreads
+# the picks across the four non-trending pillars instead.
+NON_TRENDING_PILLARS = ("stack", "science", "proof", "founder")
+
+# How each non-trending pillar frames a raw discovery topic so the copy lands on-pillar.
+# Compliance-safe wording only (research / education / opinion framing — never a claim).
+# MULTIPLE frames per pillar, rotated by day (frame_for): even when a compound has to repeat,
+# the HOOK differs so consecutive posts don't read identically (the "content recycles" report,
+# Marvin 2026-06-22). The recency rotation below (recently_used_compounds) is the primary fix —
+# this is the secondary one so the framing itself isn't a fixed template.
+PILLAR_TOPIC_FRAMES = {
+    "science": [
+        "{t} — the mechanism, explained with the research",
+        "How {t} actually works, according to the research",
+        "{t}, decoded: the science without the hype",
+    ],
+    "stack": [
+        "{t} — research-backed stack protocol",
+        "Where {t} fits in a research stack",
+        "Building a research protocol around {t} — what the data supports",
+    ],
+    "proof": [
+        "What the published research actually shows about {t}",
+        "The {t} studies everyone cites — what they really found",
+        "{t}: separating the published evidence from the marketing",
+    ],
+    "founder": [
+        "Why most people get {t} wrong — an informed, research-grounded take",
+        "The {t} take nobody wants to hear, grounded in the research",
+        "{t}: the hype, the evidence, and the honest middle",
+    ],
+}
+# Back-compat alias (first frame per pillar) for any caller/test that imports the singular name.
+PILLAR_TOPIC_FRAME = {p: frames[0] for p, frames in PILLAR_TOPIC_FRAMES.items()}
+
+
+def frame_for(pillar: str, d=None) -> str:
+    """The topic frame for this pillar, ROTATED by calendar day so the hook varies across days."""
+    frames = PILLAR_TOPIC_FRAMES.get(pillar)
+    if not frames:
+        return "{t} research"
+    d = d or eng.today_date()
+    return frames[d.toordinal() % len(frames)]
+
+
+# Rotation cooldown: a compound featured in the last N produced jobs is held back so the daily
+# run picks FRESH compounds instead of re-proposing the same top-weighted few every morning (the
+# root cause of identical day-over-day briefs). ACME-NNN ids are monotonic, so "last N jobs" needs
+# no timestamp parsing. ~8 jobs ≈ the previous day-and-a-half at 5 posts/day; override via .env.
+def _cooldown_jobs() -> int:
+    try:
+        return max(0, int(os.environ.get("ENGINE_TOPIC_COOLDOWN_JOBS", "8")))
+    except (ValueError, TypeError):
+        return 8
+
+
+def recently_used_compounds(window_jobs: int | None = None) -> list[str]:
+    """Compounds featured in the most recent `window_jobs` briefs, most-recent first (rotation
+    cooldown). Excluding these from the daily candidate pool is what stops the engine recycling
+    the same compound→pillar→template brief day after day (Marvin 2026-06-22)."""
+    window = window_jobs if window_jobs is not None else _cooldown_jobs()
+    if window <= 0:
+        return []
+    jobs = sorted(eng.JOBS_DIR.glob("ACME-*"), key=lambda p: p.name, reverse=True)[:window]
+    used: list[str] = []
+    for jd in jobs:
+        b = eng.load_json(jd / "brief.json") or {}
+        c = b.get("compound")
+        if c and c not in used:
+            used.append(c)
+    return used
+
+
+def plan_pillar_briefs(picks, *, spread, explicit_pillar=None):
+    """Map scored topics → pillars. With spread=True (the daily run) produce ONE brief per
+    non-trending pillar: stack gets the strongest COMPOUND topic (the product/conversion pillar),
+    then science/proof/founder take the next best picks — so the day covers all five pillars
+    (trending comes from Mode B). Without spread, the legacy per-topic science|stack rule (or the
+    caller's explicit --pillar). Returns [(pillar, pick), ...]. Pure — no I/O."""
+    if not spread:
+        return [(explicit_pillar or ("stack" if s.get("compound") else "science"), s) for s in picks]
+    compounds = [s for s in picks if s.get("compound")]
+    others = [s for s in picks if not s.get("compound")]
+    plan = []
+    if compounds:                                    # stack must carry a real compound (product card)
+        plan.append(("stack", compounds.pop(0)))
+    rest = compounds + others                         # remaining picks, compounds first
+    for pillar in ("science", "proof", "founder"):
+        if rest:
+            plan.append((pillar, rest.pop(0)))
+    return plan
+
+
 # Acme compound universe (PRODUCTS.md). Drives product_tie scoring, brand routing,
 # and the class/spec chips on stack (static-compound) briefs.
 COMPOUND_CATALOG = {
+    # Prices/slugs/live flags synced from the live store acmelabs.co/shop on 2026-06-21
+    # (read off the site's product data). `sku` MUST equal the real shop slug — product_link()
+    # builds SHOP_BASE + sku, so a wrong slug 404s the COA link. base price = the entry's spec
+    # strength (e.g. BPC-157 = 5mg $49; the 10mg variant is $59 on-site).
     "Semaglutide":  {"cls": "GLP-1 ANALOG", "spec": "GLP-1 analog · 5mg lyophilized · ≥99% HPLC purity",
-                     "descriptor": "Incretin mimetic for metabolic research", "price": "$149", "live": True, "sku": "semaglutide-5mg"},
+                     "descriptor": "Incretin mimetic for metabolic research", "price": "$79", "live": True, "sku": "semaglutide"},
     "Tirzepatide":  {"cls": "GIP/GLP-1 ANALOG", "spec": "Dual GIP/GLP-1 agonist · research-grade",
-                     "descriptor": "Dual incretin receptor research compound", "price": "—", "live": False},
+                     "descriptor": "Dual incretin receptor research compound", "price": "$99", "live": True, "sku": "tirzepatide"},
     "Retatrutide":  {"cls": "TRIPLE AGONIST", "spec": "GLP-1/GIP/glucagon agonist · research-grade",
-                     "descriptor": "Triple-agonist metabolic research compound", "price": "—", "live": False},
+                     "descriptor": "Triple-agonist metabolic research compound", "price": "$99", "live": True, "sku": "retatrutide"},
     "BPC-157":      {"cls": "PENTADECAPEPTIDE", "spec": "Body Protection Compound 157 · 5mg lyophilized · ≥99% HPLC purity",
-                     "descriptor": "Tissue-repair signaling research peptide", "price": "$59", "live": True, "sku": "bpc-157-5mg"},
+                     "descriptor": "Tissue-repair signaling research peptide", "price": "$49", "live": True, "sku": "bpc-157"},
     "TB-500":       {"cls": "THYMOSIN β-4 FRAGMENT", "spec": "Thymosin Beta-4 fragment · research-grade",
-                     "descriptor": "Angiogenesis & repair research peptide", "price": "—", "live": False},
+                     "descriptor": "Angiogenesis & repair research peptide", "price": "$69", "live": True, "sku": "tb-500-10mg"},
     "CJC-1295":     {"cls": "GHRH ANALOG", "spec": "GHRH/GHRP dual-action blend · 10mg lyophilized · ≥99% HPLC purity",
-                     "descriptor": "Growth-hormone axis research blend", "price": "$89", "live": True, "sku": "cjc-1295-ipamorelin"},
+                     "descriptor": "Growth-hormone axis research blend", "price": "$65", "live": True, "sku": "cjc-1295-ipamorelin"},
     "Ipamorelin":   {"cls": "GHRP", "spec": "GHRH/GHRP dual-action blend · 10mg lyophilized · ≥99% HPLC purity",
-                     "descriptor": "Selective ghrelin-receptor research peptide", "price": "$89", "live": True, "sku": "cjc-1295-ipamorelin"},
+                     "descriptor": "Selective ghrelin-receptor research peptide", "price": "$65", "live": True, "sku": "cjc-1295-ipamorelin"},
     "NAD+":         {"cls": "PRECURSOR RESEARCH", "spec": "NAD+ precursor research compound",
-                     "descriptor": "Mitochondrial NAD+ biology research", "price": "—", "live": False},
+                     "descriptor": "Mitochondrial NAD+ biology research", "price": "$65", "live": True, "sku": "nad-injection"},
     "Epithalon":    {"cls": "TETRAPEPTIDE", "spec": "Pineal tetrapeptide · 20mg lyophilized · ≥99% HPLC purity",
                      "descriptor": "Telomerase & longevity research peptide", "price": "$79", "live": True, "sku": "epithalon-20mg"},
     "Semax":        {"cls": "NEUROPEPTIDE", "spec": "Nootropic neuropeptide · research-grade",
-                     "descriptor": "BDNF-modulation research peptide", "price": "—", "live": False},
+                     "descriptor": "BDNF-modulation research peptide", "price": "$75", "live": True, "sku": "semax"},
     "Selank":       {"cls": "NEUROPEPTIDE", "spec": "Anxiolytic neuropeptide · research-grade",
-                     "descriptor": "CNS-signaling research peptide", "price": "—", "live": False},
+                     "descriptor": "CNS-signaling research peptide", "price": "$49", "live": True, "sku": "selank-5mg"},
     "GHK-Cu":       {"cls": "COPPER TRIPEPTIDE", "spec": "Copper tripeptide · research-grade",
-                     "descriptor": "Skin/collagen & longevity research peptide", "price": "—", "live": False},
+                     "descriptor": "Skin/collagen & longevity research peptide", "price": "$49", "live": True, "sku": "ghk-cu-50mg"},
 }
 
 # Health-brand routing: metabolic/weight/results angles run on Acme Health (may run
@@ -268,7 +382,26 @@ FORMAT_ARCHETYPES = {
 
 # Mode A sweep seeds + Mode B YouTube niche queries (SOUL §7 / guide §5).
 SWEEP_NEWS_QUERY = "peptides longevity BPC-157 GLP-1 NAD+ healthspan research"
+
+# ── VIRAL-OUTLIER SOURCING DOCTRINE (Marvin 2026-06-21; full version REFERENCE §13) ──
+# Don't mine topic-NOUNS alone — mine the FRAMINGS that go viral in our niche, because those
+# are the ones we can actually win. The method is three steps:
+#   1. OUTLIER (quant): rank by velocity vs the niche-baseline median, not raw views (find_outliers;
+#      outlier = >=2x baseline — the bigger the ratio the louder the signal, e.g. a 37x explainer).
+#   2. THROUGHLINE (qual): name the ONE narrative everyone is circling right now. Ours is durable:
+#      "the hype is outrunning the evidence" — celebrity buzz (Rogan/BPC-157, Ozempic->tirzepatide)
+#      vs. what studies show (SURMOUNT-5, the GLP1R variant). Clone the THROUGHLINE, not one post.
+#   3. EDGE (strategy): Acme IS the evidence side (COA + RUO + sourced), so we win whenever the
+#      frame is "hype vs. evidence". Pick outliers we can answer with DATA (myth-bust / "what it
+#      actually does" / "X vs Y" / "the part nobody mentions"); REJECT anything needing an outcome
+#      claim. Clone the hook STRUCTURE (FORMAT_ARCHETYPES) into an Acme-owned topic; body stays rigorous.
+# So lead the query set with throughline FRAMINGS (the convertible angles), keep topic-noun seeds for
+# breadth. REFRESH these as the throughline shifts — they reflect the niche conversation in mid-2026.
 OUTLIER_YT_QUERIES = [
+    # throughline framings (lead — the "hype vs. evidence" angles we can convert)
+    "what peptides actually do", "tirzepatide vs semaglutide", "are peptides worth it",
+    "peptide myths debunked", "scientists react to GLP-1 study",
+    # topic-noun seeds (broad niche coverage; surface explainer outliers too)
     "peptides longevity", "biohacking longevity", "GLP-1 metabolic health",
     "NAD+ anti-aging", "peptide therapy research",
 ]
@@ -536,21 +669,26 @@ def _detect_platform(url):
         return "tiktok"
     if "facebook.com" in u or "fb.watch" in u:
         return "facebook"
+    if "threads.net" in u or "threads.com" in u:
+        return "threads"
+    if "twitter.com" in u or "x.com" in u:
+        return "x"
     return "article"
 
 
 def bank_source(url, fresh=False):
-    """SINGLE extraction point (RV0). Pull the source's FULL transcript via the `--raw`
-    flag — apify for social URLs, blotato for articles — and bank it under
-    output/research/sources/. apify fires a fresh (paid) actor run per call and does NOT
-    cache by URL, so this `--raw` call is the ONLY scrape we ever make of a source: the
-    structured pattern below is derived locally from the banked transcript, never a 2nd
-    scrape. The 7-day run_tool cache then blocks accidental re-spend on re-runs."""
+    """SINGLE extraction point (RV0). Pull the source's FULL text via the `--raw` flag —
+    Apify for social/video URLs, Firecrawl for article/blog/website URLs — and bank it
+    under output/research/sources/. Apify fires a fresh (paid) actor run per call and does
+    NOT cache by URL; Firecrawl bills per scrape — so this `--raw` call is the ONLY scrape
+    we ever make of a source: the structured pattern below is derived locally from the
+    banked text, never a 2nd scrape. The 7-day run_tool cache then blocks accidental
+    re-spend on re-runs. Blotato is NEVER used for extraction (publish/schedule only)."""
     platform = _detect_platform(url)
-    if platform in ("youtube", "instagram", "tiktok", "facebook"):
+    if platform in ("youtube", "instagram", "tiktok", "facebook", "threads", "x"):
         raw = run_tool("apify.py", ["scrape", url, "--raw"], ttl=7 * CACHE_TTL, fresh=fresh)
     else:
-        raw = run_tool("blotato.py", ["source", url, "--raw"], ttl=7 * CACHE_TTL, fresh=fresh)
+        raw = run_tool("firecrawl.py", ["scrape", url, "--raw"], ttl=7 * CACHE_TTL, fresh=fresh)
     if not raw:
         return None
     return source_bank.upsert(url, platform, raw)
@@ -567,15 +705,17 @@ def extract_pattern(url, fresh=False):
     if not text:
         # --raw returned nothing parseable — fall back to the structured scrape ONCE so a
         # transient empty transcript can't silently abort Mode B (recovery, not routine).
-        if platform in ("youtube", "instagram", "tiktok", "facebook"):
+        if platform in ("youtube", "instagram", "tiktok", "facebook", "threads", "x"):
             data = run_tool("apify.py", ["scrape", url], ttl=7 * CACHE_TTL, fresh=fresh)
         else:
-            data = run_tool("blotato.py", ["source", url], ttl=7 * CACHE_TTL, fresh=fresh)
+            data = run_tool("firecrawl.py", ["scrape", url], ttl=7 * CACHE_TTL, fresh=fresh)
         if not data:
             return None
         d = data[0] if isinstance(data, list) else data
-        text = (d.get("transcript") or d.get("caption") or d.get("description")
-                or d.get("content") or d.get("text") or "")
+        # Firecrawl puts the article body in `markdown` (preferred over the short meta
+        # `description`); apify's social text is in transcript/caption.
+        text = (d.get("transcript") or d.get("caption") or d.get("markdown")
+                or d.get("description") or d.get("content") or d.get("text") or "")
         caption = d.get("caption") or d.get("description") or ""
         if not text:
             return None
@@ -710,7 +850,7 @@ def build_reference(*, url=None, platform="", description="", selection_rational
 
 def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
                    carousel=None, provenance=None, reference=None, job_id=None,
-                   dry_run=False, fresh=False):
+                   dry_run=False, fresh=False, note=None):
     """Produce one post.py-ready type=image brief.json (+ copy.json + research.json
     sidecars) from a selected topic. Returns the brief dict (and writes it unless dry-run).
 
@@ -776,6 +916,8 @@ def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
 
     # M2 — fill renderable copy via copywriter.py (persona hint folded into the topic).
     copy_topic = f"{topic}\n{PERSONA_VOICE.get(persona, '')}".strip()
+    if note:        # REVISE re-production: steer the fresh copy at the reviewer's note (busts the run_copy cache)
+        copy_topic += f"\nReviewer revision request — rewrite to address this specifically: {note}"
     cp = run_copy(copy_topic, brand, "instagram", product_feature, compound, cls,
                   fresh=fresh, carousel=n_slides if want_carousel else None)
     if not isinstance(cp, dict) or not cp:
@@ -826,7 +968,7 @@ REEL_PILLARS = ("trending", "science")   # the pillars eligible to carry the alt
 
 def reel_pillar_today(d=None):
     """The single pillar that gets the video reel today, or None on a non-video day."""
-    d = d or datetime.now(eng.PT).date()
+    d = d or eng.today_date()
     if not eng.is_video_day(d):
         return None
     video_index = (d.toordinal() - eng._video_anchor().toordinal()) // 2  # 0,1,2… per video day
@@ -963,15 +1105,17 @@ def _map_tokens(template, cp, brand, compound, product_feature):
         # defaults to a generic vial — pass a real product photo for a specific SKU.
         info = COMPOUND_CATALOG.get(compound, {})
         sku = info.get("sku", "")
+        # Real SKU photo (Marvin 2026-06-21): resolve the compound → its product image and feed
+        # the file:// URI the renderer loads (render.py renders from a file:// page, so a local
+        # file:// img loads with no ARG_MAX bloat). Falls back to the labelled placeholder when
+        # there's no photo for the compound; per-job brief.image.set still overrides.
+        prod_uri = (product_images.file_uri(compound) if (product_images and compound) else None) or ""
         return {"BRAND_NAME": bn, "BRAND_TAGLINE": tagline, "HANDLE": handle,
                 "EYEBROW_NUM": "01", "EYEBROW": "DROP · RESTOCK", "STATUS_CHIP": "IN STOCK",
                 "HEADLINE_EM": cp.get("HOOK_LINE_2_ITALIC") or "Featured", "HEADLINE_1": "—",
                 "HEADLINE_2": (f"{compound}." if compound else cp.get("HOOK_LINE_3", "")),
                 "SUBCTX": cp.get("SUBTITLE_TEXT", ""),
-                # No product photos yet (Marvin 2026-06-20) — leave PRODUCT_IMAGE empty so the
-                # card shows a labelled placeholder (the compound name); pass a real per-SKU photo
-                # via brief.image.set["PRODUCT_IMAGE"] when available.
-                "PRODUCT_IMAGE": "",
+                "PRODUCT_IMAGE": prod_uri,
                 "PLACEHOLDER_LABEL": (f"{compound} · image pending" if compound else "Product image pending"),
                 "LOT": "RESEARCH GRADE", "COA_CHIP": "COA AVAILABLE",
                 "SKU": (f"PRODUCT · {sku.upper()}" if sku else "PRODUCT"),
@@ -1089,9 +1233,18 @@ def cmd_topics(args):
     if args.candidates:
         candidates = [c.strip() for c in args.candidates.split(",") if c.strip()]
     else:
-        # Default seed = the highest-weighted Acme compounds (cheap, on-brand).
+        # Default seed = highest-weighted Acme compounds, but ROTATE: hold back anything used in
+        # the last few jobs so the daily run picks FRESH compounds instead of re-proposing the same
+        # top-weighted few every morning (the 'content recycles / looks identical' bug, 2026-06-22).
         tw = es.get("topic_weights", {})
-        candidates = sorted(tw, key=tw.get, reverse=True)[:args.select + 2] or list(COMPOUND_CATALOG)[:3]
+        ranked = sorted(tw, key=tw.get, reverse=True) or list(COMPOUND_CATALOG)
+        recent = recently_used_compounds()
+        fresh = [c for c in ranked if c not in recent]
+        need = args.select + 2
+        # Prefer fresh; only if the catalog can't fill the day fall back to the least-recently-used.
+        candidates = (fresh + [c for c in reversed(recent) if c in ranked])[:need] or ranked[:need]
+        if recent:
+            log(f"rotation: holding back {recent} (used in the last {_cooldown_jobs()} jobs)")
     log(f"Mode A — scoring {len(candidates)} candidates: {candidates}")
     scored = discover_topics(candidates, es, fresh=args.fresh)
     if not scored:
@@ -1106,9 +1259,12 @@ def cmd_topics(args):
         return
     store = DiscoveryStore()
     reserved = set()
-    for s in picks:
-        pillar = args.pillar or ("stack" if s["compound"] else "science")
-        topic = f"{s['topic']} research"
+    # v2: the daily run (spread=True) covers ALL non-trending pillars, not just science|stack.
+    spread = getattr(args, "spread", False) and not args.pillar
+    plan = plan_pillar_briefs(picks, spread=spread, explicit_pillar=args.pillar)
+    for pillar, s in plan:
+        topic = (frame_for(pillar).format(t=s["topic"])
+                 if (spread and pillar in PILLAR_TOPIC_FRAMES) else f"{s['topic']} research")
         jid = next_job_id(reserved)
         reserved.add(jid)
         sig = s["signals"]
@@ -1132,11 +1288,15 @@ def cmd_topics(args):
         store.add_brief(pillar=pillar, persona=brief["persona"], format_type=pillar,
                         hook_angle=topic, scoring_breakdown=s, job_id=jid, reference=ref,
                         brief_path=str(JOBS_DIR / jid / "brief.json"))
-    log(f"Mode A wrote {len(picks)} brief(s) + discovery log -> {store.dir}")
+    log(f"Mode A wrote {len(plan)} brief(s) across pillars {[p for p, _ in plan]} -> {store.dir}")
 
 
 def cmd_outliers(args):
-    queries = [args.query] if args.query else OUTLIER_YT_QUERIES[:2]
+    # Default sweep mines the FIRST 3 queries — now the throughline framings (myth-bust /
+    # comparison / "what it actually does"), which surface the outliers we can convert (doctrine
+    # above). --query overrides for a one-off. Bumped 2->3 (Marvin 2026-06-21) to widen the net;
+    # searchapi calls are cached (CACHE_TTL) so the extra query rarely costs a live request.
+    queries = [args.query] if args.query else OUTLIER_YT_QUERIES[:3]
     all_vids = []
     for q in queries:
         all_vids += find_outliers(q, num=args.num, fresh=args.fresh)
@@ -1177,9 +1337,69 @@ def cmd_inbox(args):
                        dry_run=args.dry_run, fresh=args.fresh)
 
 
+def cmd_recopy(args):
+    """Regenerate an EXISTING image job's copy/slides IN PLACE (M2), folding in the reviewer's
+    REVISE note — the image re-production path (produce_daily calls this on a status=revise image).
+    Keeps the same job_id, pillar, brand, template/format and reference; only the COPY changes to a
+    fresh, note-aware variant. 0 Higgsfield credits."""
+    job_dir = Path(args.job_dir).resolve()
+    brief = json.loads((job_dir / "brief.json").read_text())
+    if brief.get("type") != "image":
+        sys.exit(f"recopy only handles type=image (got {brief.get('type')!r}; reels re-render via reel.py)")
+    img = brief.get("image", {}) or {}
+    stem = Path(img.get("template", "")).stem or None       # templates/src/<stem>.html -> <stem>
+    carousel = None
+    if img.get("carousel"):
+        slides = json.loads((job_dir / "slides.json").read_text()) if (job_dir / "slides.json").exists() else None
+        carousel = len(slides) if isinstance(slides, list) and slides else CAROUSEL_DEFAULT_SLIDES
+    assemble_brief(brief["pillar"], brief["topic"], persona=brief.get("persona"),
+                   brand=brief.get("brand"), template=stem, carousel=carousel,
+                   reference=brief.get("reference"), job_id=brief["job_id"],
+                   note=args.note, fresh=True)
+
+
+def cmd_drops(args):
+    """Drain pending Telegram link-drops (drops.py, captured by approvals.py from ANY user) into
+    Trending briefs — v2 Stage 1 "manual_save". FIFO, up to --max, each gated by the daily apify
+    budget so the firehose can never blow the cap. Extraction failures are marked 'failed' so a bad
+    URL never retries forever. 0 Higgsfield credits (Mode B image clone; never mints a reel)."""
+    import drops as dr
+    eng.assert_running("research-drops")
+    pend = dr.pending(limit=args.max)
+    if not pend:
+        log("no pending manual link-drops.")
+        return
+    store = DiscoveryStore()
+    consumed = 0
+    for d in pend:
+        if not args.dry_run and not eng.spend("apify", 1):
+            log("apify daily cap reached — stopping drop drain (remaining drops stay pending).")
+            break
+        log(f"drop {d['id']} ({d['platform']}) by {d.get('who')}: {d['url']}")
+        before = {p.name for p in JOBS_DIR.glob("ACME-*")}
+        try:
+            _extract_and_brief(d["url"], store, persona=persona_for("trending"), brand="labs",
+                               curated=True, pillar="trending", dry_run=args.dry_run, fresh=args.fresh,
+                               source_type="manual_save", priority_bonus=d.get("priority_bonus", 3))
+        except Exception as ex:                       # extraction/network failure — don't retry forever
+            log(f"drop {d['id']} extraction error: {ex}")
+            dr.mark(d["id"], "failed")
+            continue
+        if args.dry_run:
+            continue
+        new = sorted({p.name for p in JOBS_DIR.glob("ACME-*")} - before)
+        if new:
+            dr.mark(d["id"], "consumed", job_id=new[-1])
+            consumed += 1
+        else:                                         # extract_pattern returned nothing usable
+            dr.mark(d["id"], "failed")
+    log(f"drops: {consumed} consumed of {len(pend)} pending (max {args.max}).")
+
+
 def _extract_and_brief(url, store, *, persona="P3", brand="labs", curated=False,
                        acme_topic=None, pillar="trending", outlier_meta=None,
-                       carousel=None, as_reel=False, dry_run=False, fresh=False):
+                       carousel=None, as_reel=False, dry_run=False, fresh=False,
+                       source_type=None, priority_bonus=None):
     pattern = extract_pattern(url, fresh=fresh)
     if not pattern:
         log(f"extraction failed for {url}")
@@ -1213,11 +1433,16 @@ def _extract_and_brief(url, store, *, persona="P3", brand="labs", curated=False,
     print(f"  reference: {desc}")
     print(f"  why:       {why}")
 
+    dq_extra = {}                                    # v2 discovery_queue: manual drops carry source_type + priority_bonus
+    if source_type:
+        dq_extra["source_type"] = source_type
+    if priority_bonus is not None:
+        dq_extra["priority_bonus"] = priority_bonus
     store.add_discovery(source_url=url, platform=pattern["platform"],
                         caption=pattern.get("caption", "")[:300], content_type="outlier",
                         format_type=pattern["format_type"],
                         engagement={"views": pattern["views"], "likes": pattern["likes"],
-                                    "comments": pattern["comments"]})
+                                    "comments": pattern["comments"]}, **dq_extra)
     if dry_run:
         log("dry-run: pattern extracted + scored, not assembling brief")
         return
@@ -1345,8 +1570,11 @@ def cmd_reel_today(args):
 
     es = load_engine_state()
     tw = es.get("topic_weights", {})
-    candidates = sorted(tw, key=tw.get, reverse=True)[:5] or list(COMPOUND_CATALOG)[:3]
-    log(f"reel-today [{pillar}] — scoring {len(candidates)} candidates for the day's reel topic")
+    ranked = sorted(tw, key=tw.get, reverse=True) or list(COMPOUND_CATALOG)
+    recent = recently_used_compounds()           # same rotation as the image run — no repeat reel compound
+    candidates = ([c for c in ranked if c not in recent] + [c for c in reversed(recent) if c in ranked])[:5] or ranked[:5]
+    log(f"reel-today [{pillar}] — scoring {len(candidates)} candidates for the day's reel topic"
+        + (f" (holding back {recent})" if recent else ""))
     scored = discover_topics(candidates, es, fresh=args.fresh)
     if not scored:
         log("no topic survived scoring — no reel today")
@@ -1410,6 +1638,18 @@ def main():
     pi.add_argument("--fresh", action="store_true", help="Bypass the API cache")
     pi.set_defaults(func=cmd_inbox)
 
+    prc = sub.add_parser("recopy", help="Regenerate an image job's copy IN PLACE (image REVISE re-production)")
+    prc.add_argument("job_dir", help="Job folder (type=image) to re-produce")
+    prc.add_argument("--note", default=None, help="Reviewer's REVISE note to address in the new copy")
+    prc.add_argument("--fresh", action="store_true", help="(always fresh) bypass the API cache")
+    prc.set_defaults(func=cmd_recopy)
+
+    pd = sub.add_parser("drops", help="Drain pending Telegram link-drops (any user) -> Trending briefs (v2 manual_save)")
+    pd.add_argument("--max", type=int, default=1, help="Max drops to consume this run (default 1; apify-budget-gated)")
+    pd.add_argument("--dry-run", action="store_true", help="Extract + score only; no brief, don't mark consumed")
+    pd.add_argument("--fresh", action="store_true", help="Bypass the API cache")
+    pd.set_defaults(func=cmd_drops)
+
     pbk = sub.add_parser("bank", help="Source Bank (RV0): reuse a paid source's banked angles -> briefs (0 extraction cost)")
     pbk.add_argument("source", nargs="?", help="banked source URL or 16-char id (omit / --list to list the bank)")
     pbk.add_argument("--list", action="store_true", help="List banked sources + unused-angle counts")
@@ -1436,11 +1676,16 @@ def main():
                          "Without this flag the engine follows Devon's §3.2 format-of-the-day rotation.")
     pr.add_argument("--no-carousel", dest="single", action="store_true",
                     help="FORCE single cards (the pillar's default template) instead of the rotation/carousels.")
+    pr.add_argument("--no-outliers", action="store_true",
+                    help="Skip the YouTube outlier sweep — used when a manual link-drop already filled "
+                         "the Trending slot (produce_daily passes this so the drop replaces the outlier).")
     pr.add_argument("--dry-run", action="store_true")
     pr.add_argument("--fresh", action="store_true")
-    pr.set_defaults(func=lambda a: (cmd_topics(argparse.Namespace(
-        candidates=None, select=a.select, pillar=None, carousel=a.carousel, single=a.single,
-        dry_run=a.dry_run, fresh=a.fresh)),
+    pr.set_defaults(func=lambda a: (
+        cmd_topics(argparse.Namespace(
+            candidates=None, select=a.select, pillar=None, carousel=a.carousel, single=a.single,
+            dry_run=a.dry_run, fresh=a.fresh, spread=True)),   # spread → one brief per non-trending pillar
+        None if a.no_outliers else
         cmd_outliers(argparse.Namespace(query=None, num=15, extract=True,
                                         carousel=a.carousel, single=a.single,
                                         dry_run=a.dry_run, fresh=a.fresh))))

@@ -14,6 +14,14 @@ Per job it sends (Devon's Stage 4 / SOUL §20):
 approvals.py reads the replies. 0 Higgsfield credits. No keys / --dry-run → prints the
 package instead of sending (so the card is testable without a live bot).
 
+LINK-DROPS (v2 Stage 1, ANY group member — Marvin 2026-06-21): approvals.py's same getUpdates
+poll also captures any content URL (IG/TikTok/YouTube/X/Reddit/FB/Threads) posted in the group
+by ANYONE, queueing it (drops.py) for the Trending pillar — 0 cost at drop time; the morning run
+consumes one. For the bot to SEE non-command messages from members, **group privacy must be OFF**:
+in @BotFather → /setprivacy → select this bot → **Disable** (or make the bot a group admin).
+Otherwise Telegram hides everything except commands/replies/@mentions and drops are never seen.
+No new env var is needed — drops are read from the SAME ENGINE_TELEGRAM_CHAT_ID group as approvals.
+
 Usage:
     python3 telegram.py push <job_dir> [--dry-run]
     python3 telegram.py push-day [--date YYYY-MM-DD] [--dry-run]   # all produced, un-pushed jobs
@@ -115,15 +123,32 @@ def build_card(job_dir: Path) -> str:
         preview = preview[:317].rstrip() + "…"
     media_kind = ("reel" if brief.get("type") == "reel"
                   else "carousel" if brief.get("image", {}).get("carousel") else "static card")
+    # Every card must show a post time. Prefer the slot stamped on the job's status, but fall back
+    # to the pillar's canonical PT slot (e.PILLAR_SLOT) — reels are pushed outside the image
+    # packaging path and never get a slot stamped, which left "Slot (PT):" blank (Marvin 2026-06-21).
+    slot = st.get("slot") or e.PILLAR_SLOT.get(brief.get("pillar", ""), "—")
+    # Show the FULL post time — weekday + date + PT slot — so a reviewer seeing several days'
+    # posts at once knows exactly when each one goes out (Marvin 2026-06-21: "right date and time").
+    when = slot
+    sd = st.get("slot_date")
+    if sd:
+        try:
+            from datetime import datetime as _dt
+            when = f"{_dt.strptime(sd, '%Y-%m-%d'):%a %b %d} · {slot}"
+        except (ValueError, TypeError):
+            when = f"{sd} · {slot}"
+    persona = brief.get("persona", "?")
+    target = {"P1": "P1 · The Optimizer", "P3": "P3 · The Curious Newcomer",
+              "P2": "P2 · Health (future)"}.get(persona, persona)
     lines = [
         f"📋 *{job_id}* · {brief.get('pillar', '?').title()} · Acme {brief.get('brand', '?').title()}",
         f"🎯 Hook: {_hook(job_dir, captions)}",
         "",
         f"_{preview}_",
         "",
-        f"• Pillar: {brief.get('pillar', '?')}   • Persona: {brief.get('persona', '?')}",
+        f"• Pillar: {brief.get('pillar', '?')}   • Target: {target}",
         f"• Brand: {brief.get('brand', '?')}   • Format: {media_kind}",
-        f"• Slot (PT): {st.get('slot', '—')}   • Platforms: {', '.join(sorted(captions))}",
+        f"• When (PT): {when}   • Platforms: {', '.join(sorted(captions))}",
         f"• Source: {_source(job_dir, brief)}",
     ]
     # Reference provenance — EVERY brief carries source link(s) now (Task 3): Mode B = the cloned
@@ -390,4 +415,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    e.guard_main("review-push", main)

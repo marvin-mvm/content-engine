@@ -3,13 +3,13 @@ ONCE, then mine it many times at 0 extraction cost.
 
 WHY (Marvin, 2026-06-18): one expensive extraction on a long source — a 1-hour
 interview/podcast, a long YouTube — contains far more than one post's worth of material.
-Mode B used to scrape a source, use a sliver, and discard the rest (apify/blotato even
-truncate the transcript to ~4k/3k chars). We bank the FULL extraction once (via the
+Mode B used to scrape a source, use a sliver, and discard the rest (apify's trimmed shape
+even truncates the transcript to ~4k chars). We bank the FULL extraction once (via the
 existing `--raw` flag), propose N distinct content angles from it, then build briefs from
 unused angles with ZERO new extraction spend. Feeds BOTH carousels/images (F3) and reels
-(F7). The bank is the SINGLE extraction point — apify fires a fresh (paid) actor run on
-every call and does NOT cache by URL, so we never pay for both a `--raw` and a structured
-scrape of the same source.
+(F7). The bank is the SINGLE extraction point — Apify (social/video) fires a fresh (paid)
+actor run on every call and does NOT cache by URL, and Firecrawl (articles) bills per
+scrape, so we never pay for both a `--raw` and a structured scrape of the same source.
 
 DESIGN (local-JSON now; a Supabase `sources` table plugs in later, same additive path as
 research.py's DiscoveryStore):
@@ -93,17 +93,33 @@ def _num(v) -> int:
 
 
 def normalize_payload(payload) -> tuple[str, str, dict]:
-    """Extract (full_transcript, caption, engagement) from EITHER an apify `--raw` actor
-    payload (a list of raw items, transcript in `subtitles[].srt`) OR an already-structured
-    payload (apify-trimmed / blotato source / a research cache, transcript already a string).
+    """Extract (full_transcript, caption, engagement) from any extraction-tool payload:
+      • apify `--raw` actor payload  — list of raw items, transcript in `subtitles[].srt`
+      • Firecrawl scrape (articles)  — page body in `markdown`; two shapes:
+            --raw:    {"success": true, "data": {"markdown", "metadata": {...}}}
+            trimmed:  {"url", "title", "description", "markdown"}
+      • an already-structured payload (apify-trimmed / a research cache, transcript a string)
 
-    The FULL transcript is parsed with NO truncation — that is the whole point of `--raw`.
+    The FULL text is parsed with NO truncation — that is the whole point of `--raw`.
     """
     item = payload[0] if isinstance(payload, list) and payload else payload
     if not isinstance(item, dict):
         return "", "", {}
 
-    # 1. Transcript — raw subtitle cues (FULL, untruncated) win; else a structured string.
+    # Firecrawl `--raw` nests the page under data{markdown, metadata}; flatten it so the
+    # field lookups below see markdown/description/title at the top level (the trimmed
+    # Firecrawl shape is already flat). Articles carry no view/like/comment engagement.
+    fc = item.get("data")
+    if isinstance(fc, dict) and ("markdown" in fc or "metadata" in fc):
+        meta = fc.get("metadata") if isinstance(fc.get("metadata"), dict) else {}
+        item = {
+            "markdown": fc.get("markdown"),
+            "description": meta.get("description") or meta.get("og:description"),
+            "title": meta.get("title") or meta.get("og:title"),
+        }
+
+    # 1. Transcript — raw subtitle cues (FULL, untruncated) win; else a structured string;
+    #    else the Firecrawl article body (`markdown`).
     transcript = ""
     subs = item.get("subtitles")
     if isinstance(subs, list) and subs:
@@ -111,7 +127,7 @@ def normalize_payload(payload) -> tuple[str, str, dict]:
         srt = " ".join(en) or " ".join(s.get("srt", "") for s in subs if isinstance(s, dict))
         transcript = parse_srt_to_text(srt)
     if not transcript:
-        transcript = item.get("transcript") or item.get("content") or ""
+        transcript = item.get("transcript") or item.get("content") or item.get("markdown") or ""
 
     # 2. Caption / surrounding text (any platform field name).
     caption = (item.get("caption") or item.get("description") or item.get("text")

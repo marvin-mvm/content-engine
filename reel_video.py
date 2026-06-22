@@ -53,14 +53,38 @@ from pathlib import Path
 import engine as e
 import preflight as pf
 from copywriter import call_openrouter, load_api_key, DEFAULT_MODEL
+try:
+    import product_images  # anchor the hero clip on the real product photo (Marvin 2026-06-21)
+except Exception:
+    product_images = None
 
 WS = Path(__file__).parent.resolve()
 PY = sys.executable or "python3"
 MODEL = "seedance_2_0"
 SIDE = "reel_video.json"  # per-job sidecar: the generation record (now multi-clip)
 
+
+def product_ref_for(brief: dict) -> "str | None":
+    """Higgsfield media id for the brief's compound's product photo (uploaded + cached), so the
+    HERO clip can be image-to-video off the REAL vial — e.g. a Tirzepatide reel opens on the
+    Tirzepatide product (Marvin: 'grab that image as reference and send to higgsfield'). The other
+    clips stay abstract molecular b-roll for variety. None when there's no photo / upload fails."""
+    compound = brief.get("compound")
+    if not (product_images and compound):
+        return None
+    try:
+        return product_images.higgsfield_ref(compound)
+    except Exception as ex:
+        e.log(f"product reference lookup failed for {compound}: {ex}")
+        return None
+
 COMPLETED = {"completed", "done", "ready", "succeeded", "success"}
-FAILED = {"failed", "error", "canceled", "cancelled", "ip_detected", "blocked", "rejected"}
+# 'nsfw'/'moderated' are TERMINAL — Higgsfield's content filter can false-flag clean lab b-roll
+# (Marvin 2026-06-21 system test, ACME-041 clip 3). Without these in FAILED, do_poll treats the
+# rejected clip as forever-pending and the whole reel hangs; here it's dropped and the reel
+# finalizes from the clips that did complete.
+FAILED = {"failed", "error", "canceled", "cancelled", "ip_detected", "blocked", "rejected",
+          "nsfw", "moderated", "content_moderation", "flagged"}
 
 
 def _int_env(key: str, default: int) -> int:
@@ -393,6 +417,9 @@ def submit_all(job: Path, brief: dict, plans: list[dict], duration: int) -> int:
     report the TRUE cost. The per-clip e.spend('reel', CREDITS_PER_CLIP) is the atomic daily-cap
     enforcement (G4)."""
     balance_before = wallet_balance()
+    hero_ref = product_ref_for(brief)  # real product photo → image-to-video on clip 1 only
+    if hero_ref:
+        e.log(f"{job.name}: hero clip anchored on product photo (higgsfield media {hero_ref})")
     clips = []
     for i, p in enumerate(plans, 1):
         if not e.spend("reel", CREDITS_PER_CLIP):  # atomic real-credit cap — False => would breach the ceiling
@@ -401,7 +428,10 @@ def submit_all(job: Path, brief: dict, plans: list[dict], duration: int) -> int:
             break
         e.log(f"{job.name}: SPENDING ~{CREDITS_PER_CLIP} real credits — clip {i}/{len(plans)} "
               f"seedance_2_0 {duration}s (--no-wait)")
-        r = subprocess.run([PY, str(WS / "higgsfield.py")] + _hf_args(p["prompt"], duration),
+        hf_args = _hf_args(p["prompt"], duration)
+        if i == 1 and hero_ref:                    # anchor the opening shot on the real vial
+            hf_args += ["--image", hero_ref]
+        r = subprocess.run([PY, str(WS / "higgsfield.py")] + hf_args,
                            capture_output=True, text=True)
         if r.returncode != 0:
             e.log(f"{job.name}: clip {i} submit FAILED — {r.stderr[-300:]}")

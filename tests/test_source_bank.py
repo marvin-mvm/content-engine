@@ -66,9 +66,31 @@ def main():
     check("structured transcript read", ft2 == "short text")
     check("structured engagement read", eng2 == {"views": 10, "likes": 2, "comments": 1})
 
-    # 3 — article (blotato source) shape: content field.
+    # 3 — article (legacy structured) shape: content field.
     fta, _, _ = sb.normalize_payload({"content": "article body here", "title": "T"})
     check("article 'content' used as transcript", fta == "article body here")
+
+    # 3b — Firecrawl trimmed shape: the page body is in `markdown` (not content/transcript).
+    fc_body = "# Heading\n\nThe peptide myth versus the evidence, " + ("paragraph text. " * 500)
+    ftc, capc, engc = sb.normalize_payload({
+        "url": "https://example.com/a", "title": "Myths vs evidence",
+        "description": "A faithful article summary.", "markdown": fc_body})
+    check("firecrawl trimmed markdown → transcript", ftc == fc_body)
+    check("firecrawl trimmed not truncated", len(ftc) > 4000)
+    check("firecrawl trimmed caption from description", capc == "A faithful article summary.")
+    check("firecrawl article engagement is zeroed", engc == {"views": 0, "likes": 0, "comments": 0})
+
+    # 3c — Firecrawl --raw shape: body nested under data.markdown, meta under data.metadata.
+    ftr, capr, _ = sb.normalize_payload({"success": True, "data": {
+        "markdown": fc_body, "metadata": {"title": "T", "description": "meta blurb"}}})
+    check("firecrawl --raw data.markdown → transcript", ftr == fc_body)
+    check("firecrawl --raw caption from metadata.description", capr == "meta blurb")
+
+    # 3d — end-to-end: upsert banks a Firecrawl article and serves its FULL markdown back.
+    arec = sb.upsert("https://example.com/article", "article",
+                     {"success": True, "data": {"markdown": fc_body, "metadata": {"title": "T"}}})
+    check("article banked with FULL markdown transcript", arec["full_transcript"] == fc_body)
+    check("article transcript_chars recorded", arec["transcript_chars"] == len(fc_body))
 
     # 4 — identity.
     sid = sb.source_id("https://youtu.be/PROOF")

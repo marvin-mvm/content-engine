@@ -115,10 +115,26 @@ NON-NEGOTIABLE VOICE RULES:
 "BPC-157 (Body Protection Compound-157)".
 - Be: sourced, plainspoken, curious, patient, specific, rigorous.
 - Never: hand-waving, jargon-laden, hyped, pushy, vague, overconfident.
-- Serious (not funny), conversational (not formal), respectful (not irreverent), \
-matter-of-fact (not enthusiastic).
+- Conversational (not formal), respectful (not irreverent), matter-of-fact (not enthusiastic). \
+The BODY is rigorous and calm — but the HOOK is allowed to be witty and human (see HOOK DOCTRINE).
 - Cite when you claim: every efficacy statement is tied to a mechanism or study. \
 Comfortable saying "the evidence is mixed."
+
+HOOK DOCTRINE (the single most important rule — this is what makes a post trend):
+- The HOOK = the headline (HOOK_LINE_1/2/3) AND the first line of the caption. It must STOP THE \
+SCROLL. Write it like a smart friend talking, NOT like a pharmacist reading a label.
+- Reading level for the hook: grade 6-8. Plain, human, witty. A real person says it out loud.
+- NEVER open with jargon, a mechanism, a Latin/chemical name, a receptor, a percentage, or a \
+dry "X is a Y-peptide that does Z" definition. Those belong in the body, never the hook.
+- Use ONE of these proven viral patterns, fit to the topic:
+  • Myth-bust / contradiction: "Everyone's wrong about ___." / "Two things that aren't the same."
+  • Curiosity gap (SPECIFIC, not vague): "The part nobody mentions about ___." / "What ___ actually does."
+  • Question: "Why is nobody talking about ___?" / "___ or ___ — which one's the hype?"
+  • Plain-truth contrast: "The hype says ___. The studies say ___."
+- The wit comes from CURIOSITY and CONTRAST and plain language — NOT from exaggeration. Every \
+compliance rule below still holds: no hype words, no miracle/cure/breakthrough, no promised outcomes.
+- Acme's angle is always the same and it's both honest and viral: everyone is selling the hype; \
+we show the actual research and the COA. Lead with that tension.
 
 CAPTION RULES (enforce strictly):
 - NEVER open the caption with the word "I", with the brand name, or with a generic \
@@ -166,13 +182,23 @@ You are writing an INSTAGRAM CAROUSEL: a deck of exactly {n} slides that teaches
 idea, slide by slide, building from a hook to a close.
 
 NON-NEGOTIABLE VOICE: reading level grade 8-9; plain English; define any acronym on \
-first use; sourced, specific, patient; never hyped, never vague. Serious, conversational, \
+first use; sourced, specific, patient; never hyped, never vague. Conversational, \
 matter-of-fact. Comfortable saying "the evidence is mixed."
+
+HOOK DOCTRINE (slide 1 + the caption's first line — this is what makes the deck trend):
+- Slide 1's headline and the caption opener must STOP THE SCROLL. Write them like a smart friend \
+talking (grade 6-8, plain, witty, human) — NEVER a dry "X is a Y-peptide" definition, a mechanism, \
+a chemical/Latin name, a receptor, or a percentage. Save all of that for the middle slides.
+- Use a proven viral pattern: myth-bust/contradiction ("Everyone's wrong about ___"), SPECIFIC \
+curiosity gap ("What ___ actually does"), a question ("Why is nobody talking about ___?"), or \
+plain-truth contrast ("The hype says ___. The studies say ___."). Acme's honest+viral angle: \
+everyone sells the hype; we show the research and the COA. Wit from curiosity/contrast, NEVER hype.
 
 __COMPLIANCE_BLOCK__
 
 SLIDE-DECK STRUCTURE (exactly {n} slides, in order):
-- Slide 1 = the HOOK / cover: the promise of the whole deck. EYEBROW = the topic label.
+- Slide 1 = the HOOK / cover: a scroll-stopping human hook (see HOOK DOCTRINE), not a definition. \
+EYEBROW = the topic label.
 - Middle slides = ONE idea each (mechanism, evidence, comparison, caveat) — build the argument.
 - Final slide = the closer. {ruo_rule}
 - Each slide carries: EYEBROW (2-4 words, ALL CAPS, a category label); a 3-part headline \

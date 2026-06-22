@@ -82,8 +82,22 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def today_date():
+    """The PT calendar date the engine treats as 'today'. Honors the ACME_TODAY=YYYY-MM-DD
+    env override (used to produce a specific weekday's slate — e.g. preview Mon/Tue content —
+    since the §3.2 format rotation, persona rotation and video-day cadence are all date-driven).
+    Absent → the real PT date."""
+    override = os.environ.get("ACME_TODAY")
+    if override:
+        try:
+            return datetime.strptime(override.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            log(f"ACME_TODAY={override!r} is not YYYY-MM-DD — ignoring")
+    return datetime.now(PT).date()
+
+
 def today_pt() -> str:
-    return datetime.now(PT).strftime("%Y-%m-%d")
+    return today_date().strftime("%Y-%m-%d")
 
 
 def load_env(key: str, default: str | None = None) -> str | None:
@@ -117,6 +131,37 @@ def tls_verify():
         return certifi.where()
     except ImportError:
         return True
+
+
+# ── failure alerting (v2: every stage failure pings Marvin in Telegram) ──────────
+def alert(msg: str) -> None:
+    """Best-effort Telegram alert to the engine group (failures / escalations). NEVER raises —
+    alerting must not mask the original error. Sends DIRECTLY (no telegram.py import → no import
+    cycle). If no bot/chat is configured it silently does nothing."""
+    try:
+        token = load_env("ENGINE_TELEGRAM_BOT_TOKEN")
+        chat = load_env("ENGINE_TELEGRAM_CHAT_ID")
+        if not token or not chat:
+            return
+        import requests
+        requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
+                      data={"chat_id": chat, "text": msg[:3500]},
+                      timeout=15, verify=tls_verify())
+    except Exception:                                  # alerting failure must never propagate
+        pass
+
+
+def guard_main(step: str, fn):
+    """Run an orchestrator entrypoint; on an UNCAUGHT exception fire a Telegram alert (v2
+    error-handling: every stage failure pings Marvin) then re-raise so launchd logs the
+    traceback. SystemExit (clean argparse/STOP exits) passes through silently."""
+    try:
+        return fn()
+    except SystemExit:
+        raise
+    except BaseException as ex:
+        alert(f"🛑 Acme engine — {step} FAILED: {type(ex).__name__}: {ex}")
+        raise
 
 
 # ── STOP kill-switch ────────────────────────────────────────────────────────────
@@ -179,7 +224,7 @@ def is_video_day(d: "date | None" = None) -> bool:
     """True on alternating calendar days (video reels run every OTHER day, 7-day week). The
     anchor is a video day and so is every 2nd day from it, ACROSS week boundaries — so there is
     never a two-days-in-a-row video stretch (which weekday-parity would create at Sun→Mon)."""
-    d = d or datetime.now(PT).date()
+    d = d or today_date()
     return (d.toordinal() - _video_anchor().toordinal()) % 2 == 0
 
 

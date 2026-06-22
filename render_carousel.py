@@ -25,6 +25,8 @@ from pathlib import Path
 
 NATIVE_W, NATIVE_H = 1080, 1350
 REACT_WAIT_MS = 7000  # Babel transpile + React mount
+SUPERSAMPLE = 2       # render at N× device pixels then downscale (Lanczos) → crisp text/borders
+                      # (1× aliases thin strokes + small type into rough/"cracked" edges)
 
 
 def render_deck(template: str, out_dir: str) -> list[str]:
@@ -39,13 +41,22 @@ def render_deck(template: str, out_dir: str) -> list[str]:
     outd = Path(out_dir)
     outd.mkdir(parents=True, exist_ok=True)
 
+    ss = SUPERSAMPLE
+    if ss > 1:
+        try:
+            from PIL import Image
+        except ImportError:
+            print("[carousel] Pillow not installed — rendering at 1× (text softer). "
+                  "pip3 install pillow to enable supersampling.", file=sys.stderr)
+            ss = 1
+
     outputs = []
     with sync_playwright() as p:
         browser = p.chromium.launch()
         # Viewport LARGER than the native slide so the deck's fit-to-viewport scaler leaves
         # each .slide-wrap at native 1080×1350 (a viewport ≤ native makes it shrink to fit).
         page = browser.new_page(viewport={"width": NATIVE_W + 200, "height": NATIVE_H + 200},
-                                device_scale_factor=1)
+                                device_scale_factor=ss)
         page.goto(tpl.as_uri(), wait_until="networkidle")
         page.wait_for_timeout(REACT_WAIT_MS)
         # Belt-and-suspenders: pin the scaler to identity in case a resize handler scaled it.
@@ -60,9 +71,16 @@ def render_deck(template: str, out_dir: str) -> list[str]:
         for i, el in enumerate(slides, start=1):
             out = str(outd / f"slide-{i:02d}.png")
             el.scroll_into_view_if_needed()
-            el.screenshot(path=out)
+            if ss > 1:
+                import io
+                # element shot is NATIVE·ss; Lanczos back to native 1080×1350
+                Image.open(io.BytesIO(el.screenshot())).resize(
+                    (NATIVE_W, NATIVE_H), Image.LANCZOS).save(out)
+            else:
+                el.screenshot(path=out)
             outputs.append(out)
-            print(f"[carousel] slide {i}/{len(slides)} → {out}", file=sys.stderr)
+            print(f"[carousel] slide {i}/{len(slides)}{f' ({ss}×SSAA)' if ss > 1 else ''} → {out}",
+                  file=sys.stderr)
         browser.close()
     return outputs
 

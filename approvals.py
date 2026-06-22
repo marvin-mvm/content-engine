@@ -30,6 +30,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import drops
 import engine as e
 import telegram as tg
 
@@ -203,28 +204,42 @@ def cmd_poll(args):
     requests = tg._requests()
     offset = _read_offset()
     resp = requests.get(API.format(token=token, method="getUpdates"),
-                        params={"offset": offset + 1, "timeout": 0, "allowed_updates": '["message"]'},
+                        params={"offset": offset + 1, "timeout": 0,
+                                "allowed_updates": '["message","channel_post"]'},
                         timeout=40, verify=e.tls_verify())
     if resp.status_code != 200:
         sys.exit(f"getUpdates failed {resp.status_code}: {resp.text[:200]}")
     updates = resp.json().get("result", [])
-    applied = 0
+    applied = queued = 0
     max_id = offset
     for u in updates:
         max_id = max(max_id, u.get("update_id", offset))
         msg = u.get("message") or u.get("channel_post") or {}
         text = msg.get("text", "") or msg.get("caption", "")
         frm = msg.get("from", {}) or {}
-        who = frm.get("username") or frm.get("first_name") or "telegram"
+        who = frm.get("username") or frm.get("first_name") or (msg.get("chat", {}) or {}).get("title") or "telegram"
         m = CMD_RE.search(text)
         if not m:
+            # Not an A/R/E command. Any member dropping a content URL feeds the Trending pillar
+            # (v2 Stage 1 manual_save) — captured at 0 cost; consumed by the morning run. We share
+            # this one getUpdates drain (one offset) so the watcher never fights the approval poll.
+            added = [d for d in (drops.enqueue(url, who=who,
+                                               chat_id=(msg.get("chat", {}) or {}).get("id"),
+                                               message_id=msg.get("message_id"))
+                                 for url in drops.extract_urls(text)) if d]
+            if added:
+                queued += len(added)
+                if not args.no_reply:
+                    plats = ", ".join(sorted({d["platform"] for d in added}))
+                    tg.send_text(f"📥 Queued {len(added)} link(s) ({plats}) for the Trending pillar "
+                                 f"— scored in the next morning run.", dry_run=False)
             continue
         apply_command(m.group(1), m.group(2).upper(), m.group(3), who=who,
                       reply=not args.no_reply)
         applied += 1
     if updates:
         _write_offset(max_id)
-    e.log(f"poll: {len(updates)} update(s), {applied} command(s) applied. offset -> {max_id}")
+    e.log(f"poll: {len(updates)} update(s), {applied} command(s), {queued} link-drop(s). offset -> {max_id}")
 
 
 def cmd_apply(args):
@@ -256,4 +271,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    e.guard_main("approvals-poll", main)

@@ -5,6 +5,9 @@ TTS voiceover path (Marvin 2026-06-18 — narrated, works sound-on AND sound-off
 OWN the script so the captions are exact):
 
   1. Kokoro TTS of brief.script           -> narration.wav     (hyperframes tts)
+     -> figures are spelled out for the VOICEOVER ONLY first (tts_normalize): Kokoro reads a
+        decimal as separate cardinals ("2.5%" -> "two … five percent", heard as "5%"), so the
+        spoken text gets "two point five percent" while brief.script / the caption keep "2.5%".
   2. mux narration over brief.video        -> voiced.mp4        (b-roll looped to the VO length)
      and point brief.video at the voiced clip (reel.py captions THAT)
   3. Whisper transcribe the narration      -> word timings      (hyperframes transcribe)
@@ -54,10 +57,63 @@ def _run(cmd, cwd=None):
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
 
 
+# ── 0. TTS-safe number spelling ──────────────────────────────────────────────
+# Kokoro voices a decimal as separate cardinals — it read "2.5%" as "two … five
+# percent", which at speech pace is heard as "five percent" (Marvin 2026-06-21,
+# ACME-041: caption said 2.5% / 1.9%, the narrator said 5% / 9%). The caption is
+# our authored brief.script and is CORRECT; the AUDIO diverged. Fix at the source:
+# spell numbers/percent/units as explicit words ONLY in the text handed to Kokoro,
+# so the narrator says exactly the figure. brief.script (and thus the on-screen
+# caption) is never touched — the display keeps the clean "2.5%".
+_ONES = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+         "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+         "seventeen", "eighteen", "nineteen"]
+_TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
+
+
+def _int_words(n: int) -> str:
+    """Spell a non-negative integer (0–9999 is plenty for our figures) as words."""
+    if n < 20:
+        return _ONES[n]
+    if n < 100:
+        t, o = divmod(n, 10)
+        return _TENS[t] + (f" {_ONES[o]}" if o else "")
+    if n < 1000:
+        h, r = divmod(n, 100)
+        return f"{_ONES[h]} hundred" + (f" {_int_words(r)}" if r else "")
+    th, r = divmod(n, 1000)
+    return f"{_int_words(th)} thousand" + (f" {_int_words(r)}" if r else "")
+
+
+def _frac_words(frac: str) -> str:
+    """Read a fractional part digit-by-digit, as a decimal is spoken (75 -> 'seven five')."""
+    return " ".join(_ONES[int(d)] for d in frac)
+
+
+def tts_normalize(text: str) -> str:
+    """Rewrite the SPOKEN text so Kokoro voices figures correctly. Display text is unaffected.
+      2.5%  -> 'two point five percent'      1.9%  -> 'one point nine percent'
+      15%   -> 'fifteen percent'             2.4   -> 'two point four'
+      5mg   -> '5 milligrams'  (em/en dash -> comma so the VO pauses, not slurs).
+    Only number/percent/unit tokens are expanded; acronyms Kokoro already says fine
+    (GLP-1, GIP, HbA1c, SURPASS-2) are left alone."""
+    t = re.sub(r"(\d+)\.(\d+)\s*%", lambda m: f"{_int_words(int(m.group(1)))} point {_frac_words(m.group(2))} percent", text)
+    t = re.sub(r"(\d+)\s*%", lambda m: f"{_int_words(int(m.group(1)))} percent", t)
+    t = re.sub(r"(\d+)\.(\d+)", lambda m: f"{_int_words(int(m.group(1)))} point {_frac_words(m.group(2))}", t)
+    t = re.sub(r"(?<=\d)\s*mcg\b", " micrograms", t)
+    t = re.sub(r"(?<=\d)\s*mg\b", " milligrams", t)
+    t = re.sub(r"(?<=\d)\s*kg\b", " kilograms", t)
+    t = re.sub(r"\s*[—–]\s*", ", ", t)
+    return t
+
+
 # ── 1. TTS ───────────────────────────────────────────────────────────────────
 def tts(script: str, out: Path, voice: str, speed: float) -> None:
+    spoken = tts_normalize(script)        # what Kokoro reads — numbers spelled out; NOT the caption text
+    if spoken != script:
+        e.log(f"TTS normalized figures for the voiceover (display/caption text unchanged)")
     script_file = out.parent / "script.txt"
-    script_file.write_text(script)
+    script_file.write_text(spoken)        # record exactly what was voiced
     cmd = HF + ["tts", str(script_file), "--voice", voice, "--output", str(out)]
     if speed and speed != 1.0:
         cmd += ["--speed", str(speed)]
