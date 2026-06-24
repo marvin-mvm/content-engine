@@ -85,7 +85,13 @@ def run(cmd, capture=True, check=True):
     full = [CLI] + cmd
     result = subprocess.run(full, capture_output=capture, text=True)
     if check and result.returncode != 0:
-        sys.exit(f"ERROR: `{' '.join(full)}` failed:\n{result.stderr.strip() or result.stdout.strip()}")
+        err = (result.stderr or "").strip() or (result.stdout or "").strip()
+        try:                                   # out-of-credits -> Telegram heads-up
+            import api_alerts
+            api_alerts.note("higgsfield", code=result.returncode, body=err)
+        except Exception:
+            pass
+        sys.exit(f"ERROR: `{' '.join(full)}` failed:\n{err}")
     return result
 
 

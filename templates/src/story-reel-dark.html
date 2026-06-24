@@ -30,8 +30,9 @@
     <span style="font-family: 'DM Mono', monospace; font-size: 16px; letter-spacing: 0.15em; color: #F2EDE4; text-transform: uppercase;">{{BRAND_NAME}}</span>
   </div>
 
-  <!-- Hook zone: eyebrow + headline -->
-  <div style="position: absolute; top: 80px; left: 60px; right: 280px;">
+  <!-- Hook zone: eyebrow + headline. BOUNDED (bottom + overflow) so a long hook can never grow
+       down into the centre subtitle — clips instead of colliding (mirrors the carousel flow fix). -->
+  <div style="position: absolute; top: 80px; left: 60px; right: 280px; bottom: 720px; overflow: hidden;">
     <div style="font-family: 'DM Mono', monospace; font-size: 24px; letter-spacing: 0.2em; color: #3D9E6E; margin-bottom: 40px; text-transform: uppercase;">{{EYEBROW}}</div>
     <h1 style="margin: 0; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 88px; line-height: 1.1; letter-spacing: -0.02em; color: #F2EDE4;">
       <span style="display: block;">{{HOOK_LINE_1}}</span>

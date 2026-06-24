@@ -42,7 +42,8 @@ JOBS_DIR = OUTPUT / "jobs"
 ENGINE_DIR = OUTPUT / "engine"          # manifests, budget, approval offset (untracked)
 STOP_FILE = OUTPUT / "STOP"             # touch to halt the loop; rm to resume
 GO_LIVE_FILE = OUTPUT / "GO_LIVE"       # touch to flip publishing from dry-run -> live --go
-ENGINE_STATE = WORKSPACE / "engine_state.json"
+ENGINE_STATE = WORKSPACE / "engine_state.json"           # RUNTIME (gitignored) — churns every run
+ENGINE_STATE_SEED = WORKSPACE / "engine_state.example.json"  # tracked seed for a fresh clone/worktree
 ENV_FILE = WORKSPACE / ".env"
 
 # ── the 5 daily slots (PT) + their default pillar (SOUL §5, GUIDE §3.1) ────────
@@ -51,6 +52,22 @@ PILLAR_SLOT = {                         # mirrors research.py PILLAR_PRESETS["sl
     "science": "08:00", "stack": "11:00", "trending": "13:00",
     "proof": "16:00", "founder": "19:00",
 }
+
+# ── dark/light theme by SLOT, not pillar (content.md: "morning feed is LIGHT") ──
+# THEME FOLLOWS THE ASSIGNED SLOT. On a standard 5-pillar day the pillar→slot map is 1:1, so a
+# pillar-keyed theme happened to match the slot — but a same-pillar-heavy day (e.g. 4× trending from
+# the bank-first/dedup flow) puts trending posts into the 08:00/11:00 morning slots, which must STILL
+# render light. Producers re-theme each job to its assigned slot before render (produce_daily). Acme
+# Health keeps its cream/sage LIGHT identity at every slot.
+MORNING_SLOTS = {"08:00", "11:00"}
+
+
+def theme_for_slot(slot: str | None, brand: str = "labs") -> str:
+    """content.md dark/light mode for an assigned PT slot: morning (08:00/11:00) → light, midday/
+    evening → dark; Acme Health → always light; unknown slot → dark (safe default)."""
+    if (brand or "labs") == "health":
+        return "light"
+    return "light" if slot in MORNING_SLOTS else "dark"
 
 # ── spend caps (per-day ceilings; Marvin-confirmed 2026-06-18) ─────────────────
 # Each is a hard daily ceiling; the loop refuses the call that would exceed it.
@@ -393,12 +410,11 @@ def ensure_slotted_in_manifest(job_id: str, date: str | None = None) -> str | No
     manifest entry, or publish_slot.py can never select it. produce_daily stamps both at
     produce time; this re-asserts them for any job that reached approval out-of-band (a
     manual `telegram.py push`, or produced-but-un-manifested) so a sign-off can never
-    silently strand a post. Image jobs only — reels are out of the auto-publish loop.
+    silently strand a post. Reels included (Marvin 2026-06-23): a GATE-2-approved reel now
+    auto-schedules to its pillar slot exactly like an image, instead of needing a manual publish.
     Returns the job's slot (existing or newly assigned), or None if it can't be slotted."""
     date = date or today_pt()
     brief = load_json(JOBS_DIR / job_id / "brief.json") or {}
-    if brief.get("type") == "reel":
-        return None                                  # reels publish via their own path
     st = read_status(job_id) or {"job_id": job_id, "history": []}
     man = read_manifest(date)
     jobs = man.get("jobs", [])
@@ -577,11 +593,16 @@ SCORE_EVENTS = {
 
 
 def read_state() -> dict:
-    if ENGINE_STATE.exists():
-        try:
-            return json.loads(ENGINE_STATE.read_text())
-        except json.JSONDecodeError:
-            pass
+    """Live engine state. engine_state.json is RUNTIME (gitignored — trust score, streak, dates
+    churn on every run). On a fresh clone / second worktree it's absent, so we seed from the
+    tracked engine_state.example.json (config: topic_weights / posting_rate / phase; runtime
+    counters start clean). The first write_state() then persists the live file."""
+    for p in (ENGINE_STATE, ENGINE_STATE_SEED):
+        if p.exists():
+            try:
+                return json.loads(p.read_text())
+            except json.JSONDecodeError:
+                continue
     return {}
 
 

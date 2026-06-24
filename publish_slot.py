@@ -83,10 +83,11 @@ def _is_due(jslot: str | None, jdate: str | None, firing_slot: str, today: str) 
 
 def collect_due(date: str, slot: str) -> list[dict]:
     """Jobs to publish at this slot: the manifest's entries for the slot, PLUS a safety
-    sweep of any APPROVED + un-published image job the manifest missed (manual push,
+    sweep of any APPROVED + un-published job the manifest missed (manual push,
     produced-but-un-manifested, or approved after its own slot/day). Recency-bounded to
-    CARRYOVER_HOURS so stale approvals aren't resurrected; reels are excluded (out of the
-    auto-publish loop). Dedup by job_id; already-published jobs are skipped in main()."""
+    CARRYOVER_HOURS so stale approvals aren't resurrected. Reels included (Marvin 2026-06-23):
+    a GATE-2-approved reel auto-publishes at its slot like an image. Dedup by job_id;
+    already-published jobs are skipped in main()."""
     man = e.read_manifest(date)
     due: dict[str, dict] = {j["job_id"]: j for j in man["jobs"] if j.get("slot") == slot}
 
@@ -97,9 +98,6 @@ def collect_due(date: str, slot: str) -> list[dict]:
             continue
         st = e.read_status(jid) or {}
         if st.get("status") != "approved" or not _reviewed_within(st, cutoff):
-            continue
-        brief = e.load_json(jd / "brief.json") or {}
-        if brief.get("type") == "reel":
             continue
         if _is_due(st.get("slot"), st.get("slot_date"), slot, date):
             due[jid] = {"job_id": jid, "slot": st.get("slot") or slot}

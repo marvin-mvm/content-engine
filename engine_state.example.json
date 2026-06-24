@@ -1,0 +1,35 @@
+{
+  "trust_score": 0,
+  "phase": 1,
+  "consecutive_clean_approvals": 0,
+  "streak_bonus_awarded": false,
+  "compliance_hold": false,
+  "posting_rate_per_day": 5,
+  "rejection_window_48h": [],
+  "topic_weights": {
+    "BPC-157": 1.0,
+    "Semaglutide": 1.0,
+    "Tirzepatide": 1.0,
+    "TB-500": 1.0,
+    "CJC-1295": 1.0,
+    "Ipamorelin": 1.0,
+    "NAD+": 1.0,
+    "Semax": 0.8,
+    "Selank": 0.7,
+    "Epithalon": 0.7
+  },
+  "blocked_topics": [],
+  "last_compounds_used": [],
+  "last_formats_used": [],
+  "last_cta_used": "",
+  "last_hashtag_set": [],
+  "weekly_performance": {
+    "week_start": "",
+    "posts_published": 0,
+    "top_performers": [],
+    "total_higgsfield_credits_used": 0,
+    "posts_generated_locally": 0
+  },
+  "last_updated": "",
+  "last_reel_created_date": ""
+}

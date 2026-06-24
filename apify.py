@@ -166,6 +166,11 @@ def api_request(method, path, api_key, payload=None):
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
+        try:                                   # quota/credit exhaustion -> Telegram heads-up
+            import api_alerts
+            api_alerts.note("apify", code=e.code, body=body)
+        except Exception:
+            pass
         sys.exit(f"ERROR: Apify {e.code} on {path}: {body}")
     except urllib.error.URLError as e:
         sys.exit(f"ERROR: network failure: {e}")

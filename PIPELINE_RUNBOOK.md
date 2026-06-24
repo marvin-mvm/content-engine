@@ -552,6 +552,14 @@ flow into the proven core (`copywriter.py` → `post.py`/`reel.py`). **0 Higgsfi
 Every paid API call is cached under `output/research/cache/` (24h; apify 7d) so re-runs don't
 re-spend — apify is the priciest call, so Mode B fires it once per URL.
 
+> **Daily flow (Marvin 2026-06-22):** fresh research → **text draft** (`<job>/draft.md`) → **duplication
+> gate** (`dedup.py`: vs the last-7-day approved/produced posts + REJECTED; surgically revises only a
+> near-duplicate hook/body/script, **follow-ups pass**; fail-open; `.env ENGINE_DEDUP=0` to disable) →
+> templates → TG → schedule approved. **Product rotation** = `products_in_last_days(7)` (pick a SKU
+> outside the 7-day window, related to the research). **Sundays** are **bank-first** (`serve_bank_day`)
+> — draw from the Source Bank's mined angles before any external sweep; **used angles are removed**
+> (archived to `output/research/sources/_used.jsonl`, source pruned when empty).
+
 ### 13.1 Mode A — topic discovery (sweep → SOUL §8 score → brief)
 ```bash
 # Cheap dry-run: score candidates + print the §8 breakdown, write NO briefs:
@@ -644,7 +652,10 @@ beats). **0 Higgsfield credits.** Pure-Python launchd (no `claude -p`); the only
 A) produce_daily.py run --carousel     research.py run --carousel → post.py render → captions.json
                                        (THE BRIDGE: copywriter.py --platform x|tiktok|instagram, RUO on
                                         every Labs caption, X fit ≤280/0-hashtags) → slots + manifest
-B) telegram.py push-day                sendMediaGroup + review card → DEDICATED engine group
+B) telegram.py push-day --gap 15       image+card as ONE message (card = caption on the photo/album/
+                                       reel; sendPhoto / sendMediaGroup) → DEDICATED engine group.
+                                       --gap 15 spaces sends (no jumbled order); --resend re-pushes
+                                       already-pushed cards. A/R/E reply commands are tap-to-copy.
    approvals.py poll                   getUpdates → APPROVE writes qc.json {"passed":true} + status
 C) publish_slot.py                     drain approvals → this slot's APPROVED jobs → publish.py
 ```
@@ -702,3 +713,56 @@ Telegram, publish slots log "WOULD publish"); (4) `touch output/GO_LIVE` to go l
 > `qc.json`, status→approved, trust 0→8) → `publish_slot.py --slot 11:00` gate **PASS**, *would* post to
 > X (cover tweet) + TikTok (5 slides). Held-without-approval + STOP-flag-halts both verified. No live
 > `--go`, no launchd loaded, no `GO_LIVE` — those stay gated behind Marvin's sign-off.
+
+## 15. API-depletion alerts — never degrade silently (`api_alerts.py`, built 2026-06-23)
+
+**Why:** on 2026-06-23 SearchAPI hit its monthly cap (HTTP 429). Every discovery call returned
+nothing, the §8 topic scorer went blind (all candidates tied at 0.495), and the daily run quietly
+fell back to compound **rotation** → four duplicate-compound posts (ACME-062..065) with no source
+links — and **nothing warned us**. This closes the "silent" gap: a depleted external API now pings
+Telegram and (for discovery) stops producing duplicates instead of shipping them.
+
+### 15.1 What happens when a tool is out of quota/credits
+
+`api_alerts.py` (stdlib-only, best-effort, never raises). Each tool calls
+`api_alerts.note(tool, code=, body=)` from its HTTP/credit **error branch**:
+
+- **Classify** — depletion = HTTP **402/429** or a quota/credit/billing phrase in the error body
+  (`used all of`, `insufficient credit`, `quota`, `payment required`, `upgrade your plan`, …).
+  Transient/network/5xx errors are **not** treated as depletion.
+- **Alert** — sends **one custom Telegram message per tool** to the engine group (same
+  `ENGINE_TELEGRAM_*` bot as §14.4), saying WHAT is down + WHAT to do. E.g. SearchAPI →
+  *"depleted… I can't run trending/news/YouTube discovery… drop any links you want me to build
+  from, or top up SearchApi.io."* Apify → paste post text/links. Firecrawl → paste article text.
+  Blotato → publish manually. Higgsfield → top up / fall back to Blotato images.
+- **Dedup** — once per **UTC day per tool** via `output/engine/api_alerts.json` (a daily run that
+  hammers a dead API sends ONE message, not 18; it re-alerts the next day if still down).
+
+Wired into the error branch of: `searchapi.py`, `firecrawl.py`, `apify.py`, `blotato.py`
+(HTTP + in-band `error`), `higgsfield.py` (the `run()` choke point, so out-of-credits on any
+generation is caught). Any caller of those tools triggers the right alert at the source.
+
+### 15.2 Discovery refuses to ship duplicates
+
+`research.py` `run_tool` records depleted tools in `DEPLETED_TOOLS`. **Mode A (`topics`) and
+`reel-today` refuse to generate** when SearchAPI is depleted — they log and return instead of
+emitting blind-rotation repeats. **A daily run that produces ZERO briefs during a SearchAPI outage
+is intentional, not a bug** — check the SearchApi.io quota first.
+
+### 15.3 Switches
+
+- `ENGINE_FORCE_DISCOVERY=1` — generate from rotation anyway (override the no-duplicates guard).
+- `ENGINE_ALERTS_OFF=1` — disable all depletion alerts.
+- `APIALERTS_DRYRUN=1` — print the message to stderr instead of sending (tests).
+
+```bash
+# Preview a tool's depletion message without sending (dry-run):
+python3 api_alerts.py test searchapi
+# Verify the live guard (uses the real API; alerts dry-run; writes NO briefs if depleted):
+APIALERTS_DRYRUN=1 python3 research.py topics --select 4 --dry-run
+```
+
+> **Proven 2026-06-23 against the live (depleted) SearchAPI:** the 429 fired the exact custom
+> message once (deduped across ~18 calls), Mode A logged "SearchAPI depleted — NOT generating
+> blind-rotation briefs", and **zero briefs were written**. classify() unit checks: depletion vs
+> transient/network all correct.

@@ -2,12 +2,16 @@
 
 > **On-demand reference. Not auto-injected.** Read this file when you need product
 > facts for a post, caption, image spec, or product page — compound class, format,
-> research focus, spec line, price, or SKU. All copy here is **RUO research-grade
-> framing** — use it verbatim or adapt within the compliance rules below.
+> spec line, price, or SKU.
+>
+> **Source of truth = the live store `acmelabs.co/shop`.** This file is SYNCED from the
+> site's product bundle (`/assets/index-*.js`) — last sync **2026-06-23**. If it disagrees
+> with the live site, the SITE wins; re-pull the bundle and update this file. The engine's
+> `research.py COMPOUND_CATALOG` + `engine_state.topic_weights` are synced to the same source.
 >
 > Compliance is non-negotiable (see SOUL.md): research framing only, never
 > "treats/cures/prevents", never personal-use or weight-loss claims, never dosing
-> as medical advice. These are research-use-only materials, not for human consumption.
+> as medical advice. Research-use-only materials, not for human consumption.
 
 ---
 
@@ -16,88 +20,92 @@
 - **Badge:** `RUO · NOT FOR HUMAN CONSUMPTION`
 - **Trust chip:** `COA Available — US 3rd-party verified, batch-traceable`
 - **Storage:** Lyophilized, shipped cold-chain worldwide
+- **Link / COA:** `https://acmelabs.co/shop/<slug>` (the SKU below is the exact slug)
 
 ---
 
-## Featured SKUs — live on `/shop/`, sold now
+## Live individual research compounds (22 SKUs, sold now)
 
-### 1. Semaglutide — `semaglutide-5mg` · $149
-- **Class:** GLP-1 Analog (incretin mimetic)
-- **Format:** 5mg lyophilized powder, single sterile vial
-- **Research focus:** GLP-1 receptor agonism — appetite signaling, glycemic regulation, and metabolic-pathway studies in vitro / in vivo animal models.
-- **Spec line:** "Glucagon-like peptide-1 analog · 5mg lyophilized · ≥99% HPLC purity"
-- **COA:** US 3rd-party verified, batch-traceable
+### Metabolic
+| Compound | SKU `/shop/` | Price | Spec | Class |
+|---|---|---|---|---|
+| Semaglutide | `semaglutide` | $79 | 5mg lyophilized | GLP-1 Analog |
+| Tirzepatide | `tirzepatide` | $99 | 10mg lyophilized | GIP / GLP-1 Analog |
+| Retatrutide | `retatrutide` | $99 | 10mg lyophilized | GGG Tri-Agonist (GIP/GLP-1/glucagon) |
+| Cagrilintide | `cagrilintide-5mg` | $89 | 5mg lyophilized | Amylin Analog |
+| Cagri/Sema Blend | `cagri-sema-5mg` | $99 | 5mg lyophilized | Metabolic Blend |
 
-### 2. BPC-157 — `bpc-157-5mg` · $59
-- **Class:** Pentadecapeptide (15-amino-acid sequence derived from gastric juice protein BPC)
-- **Format:** 5mg lyophilized powder
-- **Research focus:** Tissue repair signaling, angiogenesis, gut-barrier and tendon/ligament regeneration models.
-- **Spec line:** "Body Protection Compound 157 · 5mg lyophilized · ≥99% HPLC purity"
-- **COA:** US 3rd-party verified
+### Recovery / Repair
+| Compound | SKU `/shop/` | Price | Spec | Class |
+|---|---|---|---|---|
+| BPC-157 | `bpc-157` | $49 | 5mg lyophilized (10mg variant on-site) | Pentadecapeptide |
+| TB-500 | `tb-500-10mg` | $69 | 10mg lyophilized | Thymosin β-4 fragment |
+| GHK-Cu | `ghk-cu-50mg` | $49 | 50mg lyophilized | Copper Peptide |
+| Thymosin Alpha-1 (TA-1) | `ta-1-10mg` | $65 | 10mg lyophilized | Immune Peptide |
+| BPC-157 / TB-500 Blend | `bpc-tb500-blend` | $79 | 5/5mg lyophilized | Recovery Blend |
 
-### 3. CJC-1295 / Ipamorelin — `cjc-1295-ipamorelin` · $89
-- **Class:** GHRH analog + GHRP (selective ghrelin-receptor agonist) blend
-- **Format:** 10mg combined blend, lyophilized
-- **Research focus:** Growth-hormone axis stimulation, pulsatile GH release, somatotropic-pathway research.
-- **Spec line:** "GHRH/GHRP dual-action blend · 10mg lyophilized · ≥99% HPLC purity"
-- **COA:** US 3rd-party verified
+### Growth / GH-axis
+| Compound | SKU `/shop/` | Price | Spec | Class |
+|---|---|---|---|---|
+| CJC-1295 (No DAC) | `cjc-1295-no-dac-10mg` | $59 | 10mg lyophilized | GHRH |
+| CJC-1295 (with DAC) | `cjc-1295-dac-5mg` | $75 | 5mg lyophilized | GHRH |
+| CJC-1295 / Ipamorelin Blend | `cjc-1295-ipamorelin` | $65 | 5/5mg lyophilized | GHRH / GHRP Blend |
+| Ipamorelin | `ipamorelin` | $49 | 5mg lyophilized | GHRP |
+| Tesamorelin | `tesamorelin-10mg` | $65 | 10mg lyophilized | GHRH |
+| IGF-1 LR3 | `igf1-lr3-1mg` | $79 | 1mg lyophilized | Growth Factor |
+| MOTS-c | `mots-c` | $55 | 10mg lyophilized | Mitochondrial Peptide |
 
-### 4. Epithalon — `epithalon-20mg` · $79
-- **Class:** Tetrapeptide (Ala-Glu-Asp-Gly), pineal-gland derived analog
-- **Format:** 20mg lyophilized powder
-- **Research focus:** Telomerase activity, circadian/melatonin regulation, longevity and senescence research.
-- **Spec line:** "Pineal tetrapeptide · 20mg lyophilized · ≥99% HPLC purity"
-- **COA:** US 3rd-party verified
+### Cognitive
+| Compound | SKU `/shop/` | Price | Spec | Class |
+|---|---|---|---|---|
+| Semax | `semax` | $75 | 30mg nasal | Heptapeptide (neuropeptide) |
+| Selank | `selank-5mg` | $49 | 5mg lyophilized | Heptapeptide (neuropeptide) |
 
----
+### Longevity
+| Compound | SKU `/shop/` | Price | Spec | Class |
+|---|---|---|---|---|
+| NAD+ | `nad-injection` | $65 | 500mg vial | Coenzyme |
 
-## Catalog Categories — live as `/shop/` "Launching soon" placeholders
-
-Each category lists the compounds it will carry — these are the next product pages to build.
-
-### 5. GLP-1 Analogs — `/shop/glp1`
-- **Tagline:** "Incretin receptor research compounds."
-- **Compounds:** Semaglutide, Tirzepatide, Retatrutide
-- **Research focus:** GLP-1 / GIP / glucagon receptor agonism; metabolic, glycemic, and appetite-axis studies.
-
-### 6. Repair & Signaling — `/shop/growth`
-- **Tagline:** "Tissue and GH-axis peptides."
-- **Compounds:** BPC-157, TB-500 (Thymosin Beta-4 fragment), CJC-1295 / Ipamorelin
-- **Research focus:** Wound healing, angiogenesis, growth-hormone secretagogue pathways.
-
-### 7. Neuropeptides — `/shop/cognitive`
-- **Tagline:** "CNS signaling research."
-- **Compounds:** Semax, Selank, Dihexa, Cerebrolysin
-- **Research focus:** Nootropic neuropeptide signaling, BDNF modulation, neuroprotection and synaptogenesis models.
-
-### 8. Senescence — `/shop/anti-aging`
-- **Tagline:** "Telomere and longevity research."
-- **Compounds:** Epithalon, NAD+ (precursor research compounds), GHK-Cu (copper tripeptide)
-- **Research focus:** Telomerase, mitochondrial NAD+ biology, skin/collagen and longevity pathways.
-
-### 9. Melanocortin — `/shop/sexual-health`
-- **Tagline:** "MC-receptor research."
-- **Compounds:** PT-141 (Bremelanotide), Kisspeptin-10, Melanotan II
-- **Research focus:** Melanocortin receptor (MC1R/MC3R/MC4R) signaling, HPG-axis and pigmentation models.
-
-### 10. Immunomodulators — `/shop/immune`
-- **Tagline:** "Innate immunity research."
-- **Compounds:** Thymosin Alpha-1, LL-37 (cathelicidin), KPV (α-MSH tripeptide fragment)
-- **Research focus:** Innate immune signaling, antimicrobial peptide research, T-cell modulation.
+### Aesthetic / Melanocortin — *static / carousel / announcement only, NOT video/reels*
+| Compound | SKU `/shop/` | Price | Spec | Class |
+|---|---|---|---|---|
+| Melanotan-2 | `melanotan-2-10mg` | $49 | 10mg lyophilized | Melanocortin |
+| PT-141 (Bremelanotide) | `pt-141-10mg` | $49 | 10mg lyophilized | Melanocortin |
 
 ---
 
-## Quick index
+## Bundles & Stacks (9 SKUs)
 
-| # | Product / Category | SKU / Path | Price | Status |
-|---|--------------------|-----------|-------|--------|
-| 1 | Semaglutide | `semaglutide-5mg` | $149 | Live |
-| 2 | BPC-157 | `bpc-157-5mg` | $59 | Live |
-| 3 | CJC-1295 / Ipamorelin | `cjc-1295-ipamorelin` | $89 | Live |
-| 4 | Epithalon | `epithalon-20mg` | $79 | Live |
-| 5 | GLP-1 Analogs | `/shop/glp1` | — | Launching soon |
-| 6 | Repair & Signaling | `/shop/growth` | — | Launching soon |
-| 7 | Neuropeptides | `/shop/cognitive` | — | Launching soon |
-| 8 | Senescence | `/shop/anti-aging` | — | Launching soon |
-| 9 | Melanocortin | `/shop/sexual-health` | — | Launching soon |
-| 10 | Immunomodulators | `/shop/immune` | — | Launching soon |
+| Stack | SKU `/shop/` | Price | Contains |
+|---|---|---|---|
+| GLP Bundle | `glp-bundle` | $129 | Metabolic stack |
+| Gains Bundle | `gains-bundle` | $139 | CJC/IPA + BPC-157 5mg + Ipamorelin 5mg |
+| Recovery Pro | `recovery-pro` | $179 | BPC-157 10mg + TB-500 10mg + IGF-1 |
+| Repair Starter | `repair-starter` | $99 | BPC-157 5mg + TB-500 10mg |
+| Longevity Stack | `longevity-stack` | $149 | NAD+ + MOTS-c + GHK-Cu |
+| Cognitive Bundle | `cognitive-bundle` | $109 | Semax + Selank |
+| Collagen Research Bundle | `collagen-research-bundle` | $89 | GHK-Cu + BPC-157 5mg |
+| GLOW | `glow-70mg` | $99 | 70mg aesthetic blend |
+| KLOW | `klow-80mg` | $119 | 80mg aesthetic blend |
+
+## Supplies
+| Item | SKU `/shop/` | Price |
+|---|---|---|
+| Bacteriostatic Water | `bacteriostatic-water` | $14 (10 mL diluent) |
+
+---
+
+## What the content engine rotates
+
+`research.py COMPOUND_CATALOG` + `engine_state.topic_weights` rotate **18** of the individual
+compounds above (the single-compound SKUs; blends/variants `cagri-sema-5mg`, `bpc-tb500-blend`,
+`cjc-1295-dac-5mg`, `cjc-1295-ipamorelin` and the stacks are sold but not separate rotation topics).
+**Melanotan-2 and PT-141 are image-only** — excluded from autonomous reel/video topics
+(`research.VIDEO_EXCLUDED_COMPOUNDS`) but eligible for static / carousel / announcement cards.
+
+## Not yet live (hidden on-site — do NOT feature / link)
+
+Hidden in the bundle, so no live `/shop/` page: **Epithalon**, **Sermorelin**, **KPV**, plus
+protocol/supplement lines — Rapamycin & Metformin protocols, Senolytic protocols, Microdosed GLP-1,
+Metabolic Peptide Stack, and the foundational supplements (Multivitamin, Omega-3, D3-K2, Magnesium,
+Creatine + B-complex, Lipotropic B12, Electrolyte/Sleep/Cognitive kits, NAD precursor complex, etc.).

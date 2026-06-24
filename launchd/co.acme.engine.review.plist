@@ -10,6 +10,8 @@
     <string>/Library/Frameworks/Python.framework/Versions/3.13/bin/python3</string>
     <string>/Users/operator/.openclaw/workspace/acme/telegram.py</string>
     <string>push-day</string>
+    <string>--gap</string>
+    <string>15</string>
   </array>
   <key>WorkingDirectory</key><string>/Users/operator/.openclaw/workspace/acme</string>
   <key>StartCalendarInterval</key>

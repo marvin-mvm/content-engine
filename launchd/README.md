@@ -10,7 +10,7 @@ this is local-only by physical necessity (MIGRATION F4). **0 Higgsfield credits.
 | Job (`co.acme.engine.*`) | When (PT) | Runs | What |
 |---|---|---|---|
 | `produce`   | 05:30 daily        | `produce_daily.py run --carousel` | research → render → captions.json bridge → manifest |
-| `review`    | 07:00 daily        | `telegram.py push-day`            | push the day's produced jobs to the review group |
+| `review`    | 07:00 daily        | `telegram.py push-day --gap 15`   | push the day's produced jobs to the review group (15s between sends so Telegram can't re-order the batch; each card rides ON its image as one message) |
 | `approvals` | every 5 min        | `approvals.py poll`               | drain APPROVE/REJECT/REVISE replies (writes qc.json) |
 | `publish`   | 08/11/13/16/19     | `publish_slot.py`                 | publish that slot's APPROVED jobs (X + TikTok) |
 

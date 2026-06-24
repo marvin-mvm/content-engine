@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 import engine as e
@@ -112,13 +113,31 @@ def _source(job_dir: Path, brief: dict) -> str:
     return "topic discovery"
 
 
+def _md_esc(s: str) -> str:
+    """Escape legacy-Markdown entity chars in free text so a stray '_'/'*'/'`'/'[' in a hook
+    label can't open an entity that never closes (Telegram 400s the WHOLE card)."""
+    for ch in ("\\", "_", "*", "`", "["):
+        s = s.replace(ch, "\\" + ch)
+    return s
+
+
+def _md_url(url: str) -> str:
+    """Render a URL as a Markdown-safe inline link. A bare URL with '_' (an Instagram
+    /p/DXwuiB_AdKu/ slug or a '?img_index=' query) opens a legacy-Markdown italic that never
+    closes and 400s the entire review card; inside the () href those chars are never parsed, so
+    the link stays visible + tappable and the card always sends (Marvin 2026-06-22)."""
+    return f"[{_md_esc(url)}]({url})"
+
+
 def build_card(job_dir: Path) -> str:
     job_id = job_dir.name
     brief = e.load_json(job_dir / "brief.json") or {}
     captions = e.load_json(job_dir / "captions.json") or {}
     st = e.read_status(job_id) or {}
     ref = _reference(job_dir, brief)
-    preview = _cap_text(captions, "instagram", "x").strip()
+    # Collapse the caption to ONE physical line — a multi-line string wrapped in _italic_ makes the
+    # entity span line breaks, which _fit_caption's whole-line trim could split (Marvin 2026-06-23).
+    preview = " ".join(_cap_text(captions, "instagram", "x").split())
     if len(preview) > 320:
         preview = preview[:317].rstrip() + "…"
     media_kind = ("reel" if brief.get("type") == "reel"
@@ -144,7 +163,7 @@ def build_card(job_dir: Path) -> str:
         f"📋 *{job_id}* · {brief.get('pillar', '?').title()} · Acme {brief.get('brand', '?').title()}",
         f"🎯 Hook: {_hook(job_dir, captions)}",
         "",
-        f"_{preview}_",
+        f"_{_md_esc(preview)}_",
         "",
         f"• Pillar: {brief.get('pillar', '?')}   • Target: {target}",
         f"• Brand: {brief.get('brand', '?')}   • Format: {media_kind}",
@@ -164,14 +183,19 @@ def build_card(job_dir: Path) -> str:
         lines.append(f"📎 Source{'s' if len(src_links) > 1 else ''} ({len(src_links)}):")
         for title, url in src_links[:5]:
             label = (title[:58] + "…") if len(title) > 58 else title
-            lines.append(f"   • {label} — {url}" if label else f"   • {url}")
+            lines.append(f"   • {_md_esc(label)} — {_md_url(url)}" if label else f"   • {_md_url(url)}")
         if ref.get("selection_rationale"):
             lines.append(f"   ↳ {ref['selection_rationale']}")
     elif ref.get("selection_rationale"):
         lines.append(f"📎 Why: {ref['selection_rationale']}")
+    if brief.get("dedup_note"):                         # surface a duplication auto-revise
+        lines.append(f"♻️ Dedup: {brief['dedup_note']}")
     lines += [
         "",
-        f"Reply: `APPROVE {job_id}`  /  `REJECT {job_id} [note]`  /  `REVISE {job_id} [note]`",
+        "Reply — tap a command to copy:",
+        f"`APPROVE {job_id}`",
+        f"`REJECT {job_id} [note]`",
+        f"`REVISE {job_id} [note]`",
     ]
     return "\n".join(lines)
 
@@ -188,7 +212,8 @@ def build_concept_card(job_dir: Path) -> str:
     cover = brief.get("cover", {}) or {}
     cover_hook = " ".join(filter(None, [cover.get("HOOK_LINE_1"), cover.get("HOOK_LINE_2_ITALIC"),
                                         cover.get("HOOK_LINE_3")])).strip()
-    script_text = (beats.get("full_text") or brief.get("script") or "(no script yet — run script.py)").strip()
+    script_text = " ".join((beats.get("full_text") or brief.get("script")
+                             or "(no script yet — run script.py)").split())
     if len(script_text) > 600:
         script_text = script_text[:597].rstrip() + "…"
     est = beats.get("est_seconds")
@@ -197,18 +222,34 @@ def build_concept_card(job_dir: Path) -> str:
         f"🎯 Hook: {beats.get('hook') or cover_hook or '—'}",
         "",
         f"📝 Script{f' (~{est}s)' if est else ''}:",
-        f"_{script_text}_",
+        f"_{_md_esc(script_text)}_",
         "",
         f"• Pillar: {brief.get('pillar', '?')}   • Persona: {brief.get('persona', '?')}",
         f"• Brand: {brief.get('brand', '?')}   • Cover: {Path(cover.get('template', '')).stem or '—'}",
         f"• Platforms: {', '.join(brief.get('platforms', [])) or '—'}",
         f"• Source: {_source(job_dir, brief)}",
     ]
+    # List EVERY source link (mirrors build_card): a topic-discovery reel carries N study URLs in
+    # ref.sources but no single ref.url, so the old single-line "Reference" left the "5 source links"
+    # count with nothing behind it (Marvin 2026-06-22: "all source links must be included").
+    src_links = []
     if ref.get("url"):
-        lines.append(f"📎 Reference: {ref.get('description') or ref.get('platform') or 'source'}")
-        lines.append(f"   {ref['url']}")
+        src_links.append((ref.get("description") or ref.get("platform") or "source", ref["url"]))
+    for s in (ref.get("sources") or []):
+        u = s.get("url")
+        if u and not any(u == existing for _, existing in src_links):
+            src_links.append((s.get("title") or s.get("source") or s.get("platform") or "source", u))
+    if src_links:
+        lines.append(f"📎 Source{'s' if len(src_links) > 1 else ''} ({len(src_links)}):")
+        for title, url in src_links[:5]:
+            label = (title[:58] + "…") if len(title) > 58 else title
+            lines.append(f"   • {_md_esc(label)} — {_md_url(url)}" if label else f"   • {_md_url(url)}")
+        if ref.get("selection_rationale"):
+            lines.append(f"   ↳ {ref['selection_rationale']}")
     elif ref.get("selection_rationale"):
         lines.append(f"📎 Why: {ref['selection_rationale']}")
+    if brief.get("dedup_note"):                         # surface a duplication auto-revise
+        lines.append(f"♻️ Dedup: {brief['dedup_note']}")
     try:
         n_clips = int(e.load_env("ENGINE_REEL_CLIPS") or 3)
         per = int(e.load_env("ENGINE_REEL_CREDITS_PER_CLIP") or 45)
@@ -218,7 +259,10 @@ def build_concept_card(job_dir: Path) -> str:
         "",
         f"⚠️ *APPROVE spends ~{n_clips * per} Higgsfield credits* ({n_clips} stitched b-roll clips "
         f"× ~{per} each). REJECT / REVISE cost nothing.",
-        f"Reply: `APPROVE {job_id}`  /  `REJECT {job_id} [note]`  /  `REVISE {job_id} [note]`",
+        "Reply — tap a command to copy:",
+        f"`APPROVE {job_id}`",
+        f"`REJECT {job_id} [note]`",
+        f"`REVISE {job_id} [note]`",
     ]
     return "\n".join(lines)
 
@@ -241,8 +285,12 @@ def send_text(text: str, dry_run: bool) -> bool:
         print(text)
         return True
     r = _requests()
+    # Never let a URL in the body expand into a web-page preview card — the preview image/blurb
+    # bloats the review message and buries the card (Marvin 2026-06-23). Links stay clickable.
     resp = r.post(API.format(token=token, method="sendMessage"),
-                  data={"chat_id": chat, "text": text, "parse_mode": "Markdown"},
+                  data={"chat_id": chat, "text": text, "parse_mode": "Markdown",
+                        "link_preview_options": json.dumps({"is_disabled": True}),
+                        "disable_web_page_preview": "true"},
                   timeout=30, verify=e.tls_verify())
     if resp.status_code != 200:
         e.log(f"sendMessage failed {resp.status_code}: {resp.text[:200]}")
@@ -250,15 +298,75 @@ def send_text(text: str, dry_run: bool) -> bool:
     return True
 
 
-def send_media_group(files: list[Path], dry_run: bool) -> bool:
+TG_CAPTION_LIMIT = 1024  # Telegram photo/video/album caption hard cap
+
+
+def _fit_caption(text: str):
+    """Return (caption, parse_mode) for the review card riding ON the media. Telegram caps captions
+    at 1024 chars. Under the cap we keep the card whole. When a long card overflows (e.g. a reel
+    caption with several source links — Marvin 2026-06-23), we must NOT (a) drop the APPROVE/REJECT
+    commands or (b) show literal Markdown. So: keep the full reply contract (the "Reply — tap…" line
+    + the three A/R/E command lines) intact, and trim only the BODY — dropping WHOLE lines from its
+    end until it fits. Whole-line trims keep every line's Markdown entities (_italic_, *bold*,
+    [label](url)) balanced, so Markdown stays valid and parse_mode is preserved."""
+    if len(text) <= TG_CAPTION_LIMIT:
+        return text, "Markdown"
+    lines = text.splitlines()
+    cut = next((i for i, ln in enumerate(lines) if ln.startswith("Reply — tap")), None)
+    if cut is None:                                  # no contract marker → keep the last 4 lines
+        cut = max(0, len(lines) - 4)
+    body, footer = lines[:cut], lines[cut:]
+    foot = "\n".join(footer)
+    budget = TG_CAPTION_LIMIT - len(foot) - 2        # leave room for the "\n…" elision marker
+    while body and len("\n".join(body)) > budget:    # drop whole body lines until it fits
+        body.pop()
+    head = "\n".join(body).rstrip()
+    return (f"{head}\n…\n{foot}" if head else foot), "Markdown"
+
+
+def send_photo(path: Path, caption: str, dry_run: bool) -> bool:
+    """One image + the review card as its caption — a SINGLE message so text and image stay together."""
     token, chat = _creds()
+    cap, mode = _fit_caption(caption)
     if dry_run or not token or not chat:
-        print(f"[media group] {len(files)} image(s): {[f.name for f in files]}")
-        return True
-    if not files:
+        print(f"[photo] {path.name}\n{cap}\n")
         return True
     r = _requests()
-    media = [{"type": "photo", "media": f"attach://photo{i}"} for i in range(len(files))]
+    data = {"chat_id": chat, "caption": cap}
+    if mode:
+        data["parse_mode"] = mode
+    with path.open("rb") as fh:
+        resp = r.post(API.format(token=token, method="sendPhoto"),
+                      data=data, files={"photo": (path.name, fh, "image/png")},
+                      timeout=60, verify=e.tls_verify())
+    if resp.status_code != 200:
+        e.log(f"sendPhoto failed {resp.status_code}: {resp.text[:200]}")
+        return False
+    return True
+
+
+def send_media_group(files: list[Path], caption: str, dry_run: bool) -> bool:
+    """Carousel/album with the review card as the caption on the FIRST slide, so the card rides WITH
+    the images as ONE message (no detached text card drifting away from its creative). A single image
+    goes via sendPhoto — Telegram rejects 1-item albums."""
+    if not files:
+        return True
+    if len(files) == 1:
+        return send_photo(files[0], caption, dry_run)
+    token, chat = _creds()
+    cap, mode = _fit_caption(caption)
+    if dry_run or not token or not chat:
+        print(f"[media group] {len(files)} image(s): {[f.name for f in files]}\n{cap}\n")
+        return True
+    r = _requests()
+    media = []
+    for i in range(len(files)):
+        item = {"type": "photo", "media": f"attach://photo{i}"}
+        if i == 0:                                   # caption attaches to the album via its first item
+            item["caption"] = cap
+            if mode:
+                item["parse_mode"] = mode
+        media.append(item)
     handles = {f"photo{i}": (f.name, f.open("rb"), "image/png") for i, f in enumerate(files)}
     try:
         resp = r.post(API.format(token=token, method="sendMediaGroup"),
@@ -273,15 +381,20 @@ def send_media_group(files: list[Path], dry_run: bool) -> bool:
     return True
 
 
-def send_video(path: Path, dry_run: bool) -> bool:
+def send_video(path: Path, caption: str, dry_run: bool) -> bool:
+    """The reel video + the review card as its caption — a SINGLE message."""
     token, chat = _creds()
+    cap, mode = _fit_caption(caption)
     if dry_run or not token or not chat:
-        print(f"[video] {path.name}")
+        print(f"[video] {path.name}\n{cap}\n")
         return True
     r = _requests()
+    data = {"chat_id": chat, "caption": cap}
+    if mode:
+        data["parse_mode"] = mode
     with path.open("rb") as fh:
         resp = r.post(API.format(token=token, method="sendVideo"),
-                      data={"chat_id": chat}, files={"video": (path.name, fh, "video/mp4")},
+                      data=data, files={"video": (path.name, fh, "video/mp4")},
                       timeout=180, verify=e.tls_verify())
     if resp.status_code != 200:
         e.log(f"sendVideo failed {resp.status_code}: {resp.text[:200]}")
@@ -305,18 +418,21 @@ def push_job(job_dir: Path, dry_run: bool) -> bool:
         e.log(f"{job_id}: no captions.json — run produce_daily first. Skipping.")
         return False
     brief = e.load_json(job_dir / "brief.json") or {}
+    card = build_card(job_dir)
+    # The review card rides ON the media as a caption — ONE message, so the text never drifts away
+    # from its image/carousel/reel (Marvin 2026-06-23: "messages and images not on each other").
     if brief.get("type") == "reel":
         vid = reel_final(job_dir)
         if not vid:
             e.log(f"{job_id}: no rendered reel (captioned.mp4 / {job_id}-final.mp4) — run RV4 first. Skipping.")
             return False
-        ok = send_video(vid, dry_run) and send_text(build_card(job_dir), dry_run)
+        ok = send_video(vid, card, dry_run)
     else:
         files = media_files(job_dir)
         if not files:
             e.log(f"{job_id}: no media PNGs found — skipping.")
             return False
-        ok = send_media_group(files, dry_run) and send_text(build_card(job_dir), dry_run)
+        ok = send_media_group(files, card, dry_run)
     if ok and not dry_run:
         st = e.read_status(job_id) or {}
         # advance to pushed from a pre-review state (incl. a concept-approved reel); never
@@ -368,16 +484,23 @@ def cmd_push_day(args):
     if not man["jobs"]:
         e.log(f"no manifest jobs for {date} — nothing to push.")
         return
+    gap = max(0, getattr(args, "gap", 0) or 0)
+    resend = getattr(args, "resend", False)
+    # Normally only freshly 'produced' jobs push. --resend ALSO re-sends cards already in front of a
+    # human ('pushed'/'revise') so a formatting fix can replace the jumbled originals; approved/
+    # published jobs are never re-pushed.
+    sendable = {"produced"} | ({"pushed", "revise"} if resend else set())
     pushed = 0
     for j in man["jobs"]:
         st = e.read_status(j["job_id"]) or {}
-        if st.get("status") in ("pushed", "approved", "published"):
-            continue                               # already in front of a human / done
-        if st.get("status") != "produced":
-            continue                               # held/failed -> don't push
+        if st.get("status") not in sendable:
+            continue                               # held/failed/approved/published -> don't push
+        if pushed and gap:                         # space sends so Telegram can't re-order the batch
+            time.sleep(gap)
         if push_job(e.JOBS_DIR / j["job_id"], args.dry_run):
             pushed += 1
-    e.log(f"push-day {date}: pushed {pushed} job(s).")
+    e.log(f"push-day {date}: pushed {pushed} job(s)"
+          + (f" [resend, {gap}s gap]" if resend else f" [{gap}s gap]" if gap else "") + ".")
 
 
 def cmd_send(args):
@@ -403,6 +526,10 @@ def main():
     pd = sub.add_parser("push-day", help="Push all produced, un-pushed jobs in today's manifest")
     pd.add_argument("--date")
     pd.add_argument("--dry-run", action="store_true")
+    pd.add_argument("--gap", type=int, default=0,
+                    help="Seconds to wait between sends so Telegram can't jumble the batch order (e.g. 15)")
+    pd.add_argument("--resend", action="store_true",
+                    help="Also re-send jobs already 'pushed'/'revise' (replace jumbled/mis-themed originals)")
     pd.set_defaults(func=cmd_push_day)
 
     ps = sub.add_parser("send", help="Send a plain status/alert message")

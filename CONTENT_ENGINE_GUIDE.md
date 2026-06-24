@@ -195,6 +195,28 @@ via Telegram.
 Hard daily backstop (independent of the above): `engine.py` `reel` cap = **135 real credits/day**
 + a live-wallet gate (refuse if the Higgsfield balance is short). See `reel_video.py`.
 
+### 3.6 Reel approval & publishing — the TWO gates (Marvin 2026-06-23)
+
+A reel/video is a **two-approval** flow (images are single-approval — just the posting one):
+
+1. **GATE 1 — concept/script.** The concept card (spoken script + b-roll prompts) goes to Telegram
+   *before* any spend. `APPROVE` → `concept_approved`; **trust-neutral**, spends nothing, only
+   **unlocks generation** (`status==awaiting_concept` routes A/R/E to the concept gate).
+2. **Generation.** `produce_daily.py reel` (RV3 Seedance/Kling b-roll → RV4 TTS+captions → render)
+   pushes the finished **video** to Telegram → `status=pushed`.
+3. **GATE 2 — posting.** You review the actual rendered reel; `APPROVE` writes the publish sign-off
+   (`qc.json`), advances to `approved`, and **slots it** at its pillar slot.
+4. **Publish.** `publish_slot.py` posts it to Blotato (x, tiktok) **at the slot**, exactly like an
+   image (dry-run until `output/GO_LIVE`).
+
+Two guards make this safe:
+- **No premature posting APPROVE (the double-APPROVE fix).** `approvals.apply_command` refuses a
+  final-gate `APPROVE` on a `type=reel` unless `status=="pushed"` **and** a render exists
+  (`{job}-final.mp4`/`captioned.mp4`). A 2nd APPROVE on a concept-approved-but-un-generated reel can
+  no longer write `qc.json` / mark it `approved`.
+- **Reels now auto-publish like images** (supersedes "reels are manual-only / out of the auto-publish
+  loop"): `engine.ensure_slotted_in_manifest` slots reels and `publish_slot.collect_due` includes them.
+
 ---
 
 ## 4. Tech stack (Devon's proposal → ours)
@@ -221,10 +243,11 @@ credits as a managed lever; OpenRouter instead of Anthropic-direct.)
 
 | Stage (Devon) | Runs | Our module | Writes (Supabase) | Status |
 |---|---|---|---|---|
-| **1 · DISCOVER** | 06:00 | `research.py` sweep (apify/searchapi/firecrawl): viral-outlier mining + topic discovery | `discovery_queue` | **F3 — next** |
+| **1 · DISCOVER** | 06:00 | `research.py` sweep (apify/searchapi/firecrawl): viral-outlier mining + topic discovery. **Sundays = bank-first** (`serve_bank_day` reuses the week's banked angles before any external search; used angles are archived + removed) | `discovery_queue` | **F3 — next** |
 | **2 · SCORE & SELECT** | 06:30 | `research.py` scoring → top 5 (one/pillar) → `brief.json` files | `daily_brief` | **F3 — next** |
-| **3 · GENERATE** | 07:00 | `copywriter.py` (caption + overlay tokens + hashtags + platform variants) | `content_drafts` | copywriter.py ✅; per-job M2 |
-| **4 · TELEGRAM REVIEW** | 08:00 | `telegram.py` + `approvals.py` (A/R/E) | `approved_drafts` / `content_drafts.status` | **F2 — last** |
+| **3 · GENERATE** | 07:00 | `copywriter.py` (caption + overlay tokens + hashtags + platform variants) → **text draft** (`draft.md`) | `content_drafts` | copywriter.py ✅; per-job M2 |
+| **3.5 · DEDUP GATE** | inline | `dedup.py` — compare the draft to the last-7-day approved/produced posts + REJECTED; surgically revise any near-duplicate hook/body/script (follow-ups pass); fail-open | `content_drafts` (revised) | ✅ Marvin 2026-06-22 |
+| **4 · TELEGRAM REVIEW** | 08:00 | `telegram.py` + `approvals.py` (A/R/E); card shows `♻️ Dedup:` on auto-revise | `approved_drafts` / `content_drafts.status` | **F2 — last** |
 | **5 · PRODUCE VISUALS** | post-approval | `produce.py`/`reel.py`/`post.py` + HyperFrames (**not Creatomate**) | `ready_to_publish` | ✅ built (A1–A5) |
 | **6 · SCHEDULE & PUBLISH** | staggered | `publish.py` → Blotato (per §3.1 routing) | `published_posts` | ✅ **F1 built** |
 | **7 · MEASURE** | 23:00 | `apify.py` scrape-back (after 12–16h) | `performance_data` | F4-era backfill |

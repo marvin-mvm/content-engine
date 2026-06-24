@@ -23,6 +23,12 @@ asset_cache/
 memory/
 logs/
 
+# --- Live engine runtime state (churns every run: trust score, streak, dates). ---
+# The TRACKED seed is engine_state.example.json; engine.read_state() bootstraps from it
+# when this live file is absent (fresh clone / second worktree). Keeping the live file out
+# of git stops the constant "modified" drift + cross-worktree merge conflicts.
+engine_state.json
+
 # --- Rendered video (large; regenerable; kept on disk for local use, not in git) ---
 *.mp4
 

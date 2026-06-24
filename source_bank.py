@@ -133,6 +133,14 @@ def normalize_payload(payload) -> tuple[str, str, dict]:
     caption = (item.get("caption") or item.get("description") or item.get("text")
                or item.get("summary") or item.get("title") or "")
 
+    # Image/photo posts (IG carousels & single images, X text posts) carry NO subtitle/transcript —
+    # their FULL text IS the caption. Promote it so transcript_chars > 0 and BOTH the angle-miner
+    # (propose_angles needs full_transcript) and Mode-B extraction have real material. Without this,
+    # every IG image-post source banked transcript_chars=0 and could never feed the bank
+    # (Marvin 2026-06-22, ACME-052..061 batch: 10 IG drops all banked 0 chars).
+    if not transcript:
+        transcript = caption
+
     # 3. Engagement (raw + structured + nested tiktok stats field names).
     stats = item.get("stats") if isinstance(item.get("stats"), dict) else {}
     engagement = {
@@ -277,13 +285,30 @@ def unused_angles(record: dict, *, fmt: str | None = None, pillar: str | None = 
     return out
 
 
+USED_LOG = SOURCES_DIR / "_used.jsonl"   # provenance archive of spent angles (angle -> job)
+
+
 def mark_used(record: dict, angle_id: str, job_id: str) -> dict:
-    for a in record.get("angles", []):
-        if a.get("id") == angle_id:
-            a["used"] = True
-            a["job_id"] = job_id
-            break
-    save(record)
+    """Archive a used angle: REMOVE it from the servable pool and append it to _used.jsonl, so it
+    can never be served again (Marvin 2026-06-22: 'used items must be removed from the bank'). The
+    log keeps angle->job provenance for the audit trail. When a source has no angles left, its file
+    is pruned. Returns the (possibly-pruned) record."""
+    angles = record.get("angles", [])
+    used = next((a for a in angles if a.get("id") == angle_id), None)
+    record["angles"] = [a for a in angles if a.get("id") != angle_id]
+    if used is not None:
+        SOURCES_DIR.mkdir(parents=True, exist_ok=True)
+        with USED_LOG.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "source_id": record.get("source_id"), "url": record.get("url"),
+                "angle_id": angle_id, "angle": used.get("angle"),
+                "pillar": used.get("pillar"), "format": used.get("format"),
+                "job_id": job_id, "used_at": now_iso(),
+            }, ensure_ascii=False) + "\n")
+    if not record["angles"]:                 # source fully mined → prune the file (nothing left to serve)
+        bank_path(record["source_id"]).unlink(missing_ok=True)
+    else:
+        save(record)
     return record
 
 

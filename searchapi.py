@@ -58,6 +58,11 @@ def call_api(params):
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
+        try:                                   # quota/credit exhaustion -> Telegram heads-up
+            import api_alerts
+            api_alerts.note("searchapi", code=e.code, body=body)
+        except Exception:
+            pass
         sys.exit(f"ERROR: SearchAPI {e.code}: {body}")
     except urllib.error.URLError as e:
         sys.exit(f"ERROR: network failure: {e}")

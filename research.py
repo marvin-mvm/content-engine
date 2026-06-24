@@ -62,6 +62,10 @@ try:
     import product_images  # real SKU photos → PRODUCT_IMAGE token / Higgsfield reference
 except Exception:           # never let a missing asset tree break a produce run
     product_images = None
+try:
+    import dedup            # content-duplication gate (Marvin 2026-06-22) — fail-open
+except Exception:
+    dedup = None
 
 WS = Path(__file__).parent.resolve()
 PY = sys.executable or "python3"
@@ -78,12 +82,12 @@ CACHE_TTL = 24 * 3600  # seconds
 # Defaults are picked so copywriter.py can fill the renderable token set directly
 # (story-reel-dark tokens === copywriter.py overlay output). Everything renders at 0 credits.
 PILLAR_PRESETS = {
-    "science":  {"template": "story-reel-dark", "alts": ["carousel-dark", "static-callout-dark", "story-poll-pro-dark"],
+    "science":  {"template": "story-reel-dark", "alts": ["carousel-dark", "static-callout-dark", "static-compound-dark"],
                  "persona": "P1", "slot": "08:00", "platforms": ["instagram", "tiktok", "x"]},
     "stack":    {"template": "static-compound-dark", "alts": ["carousel-dark", "story-product-dark"],
                  "persona": "P1", "slot": "11:00", "platforms": ["instagram", "tiktok"],
                  "product_feature": True},
-    "trending": {"template": "story-reel-dark", "alts": ["carousel-dark", "story-poll-pro-dark"],
+    "trending": {"template": "story-reel-dark", "alts": ["carousel-dark", "static-compound-dark"],
                  "persona": "P3", "slot": "13:00", "platforms": ["instagram", "tiktok"]},
     # v2 renamed this pillar "Research Spotlight" (was "Social Proof & Results"): physician
     # validation is REMOVED — all credibility is external published research cited by source.
@@ -142,17 +146,25 @@ WEEKLY_FORMATS = {
     "founder":  ["quote",    "callout",  "quote",        "carousel", "callout",  "carousel", "quote"],
 }
 
-# format-of-the-day → template stem (theme appended per brand). 'carousel'/'reel' are special.
+# format-of-the-day → template stem (theme appended per brand). 'carousel'/'reel' are special,
+# and so are the COMPARISON formats (compare/this_or_that/poll): they route to carousel decks in
+# daily_image_template below. NOTHING here may point at story-poll-pro — that template's comparison
+# body is hardcoded ("BPC-157 vs Semaglutide", see _map_tokens), so the copywriter never fills it
+# and it renders SAMPLE data. It stays manual-only until autonomous poll generation exists
+# (Marvin 2026-06-22, ACME-052..061 batch). Comparison angles are far better as carousels anyway.
 _FORMAT_STEM = {
     "single": "story-reel", "graphic": "static-compound", "compound": "static-compound",
-    "product": "story-product", "compare": "story-poll-pro", "this_or_that": "story-poll-pro",
+    "product": "story-product", "compare": "carousel", "this_or_that": "carousel",
     # A founder "quote" is a STATEMENT card, not a stat — static-callout's big STAT field is sized
     # for a short number ("14.9%"), so a multi-word quote overflowed and overlapped the label/source
     # (Marvin 2026-06-21 system test, ACME-040/036). Statements render correctly on story-reel.
     # "callout" stays static-callout (the proof/stat card) — feed it a real short stat.
-    "poll": "story-poll-pro", "quote": "story-reel", "callout": "static-callout",
+    "poll": "carousel", "quote": "story-reel", "callout": "static-callout",
     "myth_bust": "story-reel",
 }
+
+# Comparison/poll formats that must render as a multi-slide carousel deck (never story-poll-pro).
+_CAROUSEL_FORMATS = {"carousel", "compare", "this_or_that", "poll"}
 
 
 def pillar_format_today(pillar, d=None):
@@ -170,7 +182,7 @@ def daily_image_template(pillar, brand, d=None, *, product_feature=False):
     fmt = pillar_format_today(pillar, d)
     if fmt in (None, "reel"):
         fmt = "carousel"                       # safe image fallback on reel/unknown days
-    if fmt == "carousel":
+    if fmt in _CAROUSEL_FORMATS:               # carousel + the comparison/poll formats → deck
         return themed("carousel", pillar, brand), True
     stem = _FORMAT_STEM.get(fmt, "static-compound")
     if stem == "story-product" and not product_feature:
@@ -290,6 +302,75 @@ def recently_used_compounds(window_jobs: int | None = None) -> list[str]:
     return used
 
 
+def _job_age_days(job_dir: Path) -> float:
+    """How many days ago a job was produced (status.produced_at, else the brief file's mtime)."""
+    st = eng.load_json(job_dir / "status.json") or {}
+    ts = st.get("produced_at") or st.get("pushed_at")
+    dt = None
+    if ts:
+        try:
+            dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        except ValueError:
+            dt = None
+    if dt is None and (job_dir / "brief.json").exists():
+        dt = datetime.fromtimestamp((job_dir / "brief.json").stat().st_mtime, tz=timezone.utc)
+    if dt is None:
+        return 1e9
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - dt).total_seconds() / 86400.0
+
+
+def products_in_last_days(days: int = 7) -> list[str]:
+    """Products (compounds) that WENT OUT in the last `days`, most-recent first — the product
+    cooldown window (Marvin 2026-06-22: 'list the products that went out in the last 7 days, then
+    pick one related to the research or a NEW product not in the last-7-day window'). The daily run
+    excludes these so the same SKU isn't re-featured within a week; when the catalog is exhausted it
+    falls back to the least-recently-used product."""
+    out: list[str] = []
+    jobs = sorted(eng.JOBS_DIR.glob("ACME-*"), key=lambda p: p.name, reverse=True) if eng.JOBS_DIR.exists() else []
+    for jd in jobs:
+        if _job_age_days(jd) > days:
+            continue
+        c = (eng.load_json(jd / "brief.json") or {}).get("compound")
+        if c and c not in out:
+            out.append(c)
+    return out
+
+
+# GLP-1/incretin weight-loss compounds read as "the same kind of post" to the dedup judge even
+# though their catalog `cls` strings differ — featuring ANY of them fills the day's "GLP-1 content"
+# slot. Grouping them into ONE rotation family is what stops the engine clustering Tirzepatide/
+# Semaglutide/Retatrutide across days (Marvin 2026-06-23: "stop producing similar GLP-1 content").
+INCRETIN_FAMILY = {"Semaglutide", "Tirzepatide", "Retatrutide"}
+
+
+def compound_family(compound: str | None) -> str:
+    """The rotation bucket a compound belongs to: incretin/GLP-1 compounds share one bucket;
+    everything else buckets by its catalog class (`cls`), falling back to its own name."""
+    if not compound:
+        return ""
+    if compound in INCRETIN_FAMILY:
+        return "incretin-glp1"
+    return (COMPOUND_CATALOG.get(compound, {}) or {}).get("cls") or compound
+
+
+def recency_penalty(compound: str | None, recent: list[str]) -> float:
+    """A 0<f≤1 score multiplier that down-weights a compound whose EXACT name OR FAMILY was featured
+    recently, so the daily scorer rotates across the catalog instead of re-picking the hottest-
+    trending compound (the GLP-1s) every day. With only ~12 SKUs at 5 posts/day the 7-day product
+    window always covers the whole catalog, so trending alone kept re-selecting GLP-1s — this is the
+    tiebreaker that spreads the load (Marvin 2026-06-23). `recent` = recently_used_compounds(),
+    most-recent first; the most-recent bucket is hit hardest and the penalty fades over a few jobs."""
+    if not compound or not recent:
+        return 1.0
+    fam = compound_family(compound)
+    for i, c in enumerate(recent):
+        if c == compound or compound_family(c) == fam:
+            return min(1.0, 0.35 + 0.16 * i)   # 0.35× most-recent → ~1.0 by the 5th distinct bucket
+    return 1.0
+
+
 def plan_pillar_briefs(picks, *, spread, explicit_pillar=None):
     """Map scored topics → pillars. With spread=True (the daily run) produce ONE brief per
     non-trending pillar: stack gets the strongest COMPOUND topic (the product/conversion pillar),
@@ -310,38 +391,62 @@ def plan_pillar_briefs(picks, *, spread, explicit_pillar=None):
     return plan
 
 
-# Acme compound universe (PRODUCTS.md). Drives product_tie scoring, brand routing,
-# and the class/spec chips on stack (static-compound) briefs.
+# Acme compound universe — SYNCED to the live store acmelabs.co/shop on 2026-06-23 by reading
+# the SPA's product bundle (the SOURCE OF TRUTH; PRODUCTS.md is reference-only and was stale). Only
+# VISIBLE individual research compounds are listed (bundles/category pages/supplies excluded; HIDDEN
+# products like Epithalon are dropped). `sku` MUST equal the real shop slug — product_link() builds
+# SHOP_BASE + sku, so a wrong slug 404s the COA link. Drives product_tie scoring, brand routing, and
+# the class/spec chips on stack (static-compound) briefs. (engine_state.topic_weights mirrors these.)
 COMPOUND_CATALOG = {
-    # Prices/slugs/live flags synced from the live store acmelabs.co/shop on 2026-06-21
-    # (read off the site's product data). `sku` MUST equal the real shop slug — product_link()
-    # builds SHOP_BASE + sku, so a wrong slug 404s the COA link. base price = the entry's spec
-    # strength (e.g. BPC-157 = 5mg $49; the 10mg variant is $59 on-site).
-    "Semaglutide":  {"cls": "GLP-1 ANALOG", "spec": "GLP-1 analog · 5mg lyophilized · ≥99% HPLC purity",
-                     "descriptor": "Incretin mimetic for metabolic research", "price": "$79", "live": True, "sku": "semaglutide"},
-    "Tirzepatide":  {"cls": "GIP/GLP-1 ANALOG", "spec": "Dual GIP/GLP-1 agonist · research-grade",
-                     "descriptor": "Dual incretin receptor research compound", "price": "$99", "live": True, "sku": "tirzepatide"},
-    "Retatrutide":  {"cls": "TRIPLE AGONIST", "spec": "GLP-1/GIP/glucagon agonist · research-grade",
-                     "descriptor": "Triple-agonist metabolic research compound", "price": "$99", "live": True, "sku": "retatrutide"},
-    "BPC-157":      {"cls": "PENTADECAPEPTIDE", "spec": "Body Protection Compound 157 · 5mg lyophilized · ≥99% HPLC purity",
-                     "descriptor": "Tissue-repair signaling research peptide", "price": "$49", "live": True, "sku": "bpc-157"},
-    "TB-500":       {"cls": "THYMOSIN β-4 FRAGMENT", "spec": "Thymosin Beta-4 fragment · research-grade",
-                     "descriptor": "Angiogenesis & repair research peptide", "price": "$69", "live": True, "sku": "tb-500-10mg"},
-    "CJC-1295":     {"cls": "GHRH ANALOG", "spec": "GHRH/GHRP dual-action blend · 10mg lyophilized · ≥99% HPLC purity",
-                     "descriptor": "Growth-hormone axis research blend", "price": "$65", "live": True, "sku": "cjc-1295-ipamorelin"},
-    "Ipamorelin":   {"cls": "GHRP", "spec": "GHRH/GHRP dual-action blend · 10mg lyophilized · ≥99% HPLC purity",
-                     "descriptor": "Selective ghrelin-receptor research peptide", "price": "$65", "live": True, "sku": "cjc-1295-ipamorelin"},
-    "NAD+":         {"cls": "PRECURSOR RESEARCH", "spec": "NAD+ precursor research compound",
-                     "descriptor": "Mitochondrial NAD+ biology research", "price": "$65", "live": True, "sku": "nad-injection"},
-    "Epithalon":    {"cls": "TETRAPEPTIDE", "spec": "Pineal tetrapeptide · 20mg lyophilized · ≥99% HPLC purity",
-                     "descriptor": "Telomerase & longevity research peptide", "price": "$79", "live": True, "sku": "epithalon-20mg"},
-    "Semax":        {"cls": "NEUROPEPTIDE", "spec": "Nootropic neuropeptide · research-grade",
-                     "descriptor": "BDNF-modulation research peptide", "price": "$75", "live": True, "sku": "semax"},
-    "Selank":       {"cls": "NEUROPEPTIDE", "spec": "Anxiolytic neuropeptide · research-grade",
-                     "descriptor": "CNS-signaling research peptide", "price": "$49", "live": True, "sku": "selank-5mg"},
-    "GHK-Cu":       {"cls": "COPPER TRIPEPTIDE", "spec": "Copper tripeptide · research-grade",
-                     "descriptor": "Skin/collagen & longevity research peptide", "price": "$49", "live": True, "sku": "ghk-cu-50mg"},
+    # ── Metabolic ──────────────────────────────────────────────────────────────
+    "Semaglutide":      {"cls": "GLP-1 ANALOG", "spec": "GLP-1 analog · 5mg lyophilized · ≥99% HPLC purity",
+                         "descriptor": "Incretin mimetic for metabolic research", "price": "$79", "live": True, "sku": "semaglutide"},
+    "Tirzepatide":      {"cls": "GIP/GLP-1 ANALOG", "spec": "Dual GIP/GLP-1 agonist · 10mg lyophilized · ≥99% HPLC purity",
+                         "descriptor": "Dual incretin receptor research compound", "price": "$99", "live": True, "sku": "tirzepatide"},
+    "Retatrutide":      {"cls": "GIP/GLP-1/GLUCAGON AGONIST", "spec": "Triple (GGG) agonist · 10mg lyophilized · ≥99% HPLC purity",
+                         "descriptor": "Triple-agonist metabolic research compound", "price": "$99", "live": True, "sku": "retatrutide"},
+    "Cagrilintide":     {"cls": "AMYLIN ANALOG", "spec": "Long-acting amylin analog · 5mg lyophilized · ≥99% HPLC purity",
+                         "descriptor": "Amylin-receptor metabolic research peptide", "price": "$89", "live": True, "sku": "cagrilintide-5mg"},
+    # ── Recovery / repair ──────────────────────────────────────────────────────
+    "BPC-157":          {"cls": "PENTADECAPEPTIDE", "spec": "Body Protection Compound 157 · 5mg lyophilized · ≥99% HPLC purity",
+                         "descriptor": "Tissue-repair signaling research peptide", "price": "$49", "live": True, "sku": "bpc-157"},
+    "TB-500":           {"cls": "THYMOSIN β-4 FRAGMENT", "spec": "Thymosin Beta-4 fragment · 10mg lyophilized · ≥99% HPLC purity",
+                         "descriptor": "Angiogenesis & repair research peptide", "price": "$69", "live": True, "sku": "tb-500-10mg"},
+    "GHK-Cu":           {"cls": "COPPER TRIPEPTIDE", "spec": "Copper tripeptide · 50mg lyophilized · ≥99% HPLC purity",
+                         "descriptor": "Skin/collagen & longevity research peptide", "price": "$49", "live": True, "sku": "ghk-cu-50mg"},
+    "Thymosin Alpha-1": {"cls": "IMMUNE PEPTIDE", "spec": "Thymosin Alpha-1 · 10mg lyophilized · ≥99% HPLC purity",
+                         "descriptor": "Innate-immune signaling research peptide", "price": "$65", "live": True, "sku": "ta-1-10mg"},
+    # ── Growth / GH axis ───────────────────────────────────────────────────────
+    "CJC-1295":         {"cls": "GHRH ANALOG", "spec": "CJC-1295 (no DAC) · 10mg lyophilized · ≥99% HPLC purity",
+                         "descriptor": "Growth-hormone-axis (GHRH) research peptide", "price": "$59", "live": True, "sku": "cjc-1295-no-dac-10mg"},
+    "Ipamorelin":       {"cls": "GHRP", "spec": "Selective ghrelin agonist · 5mg lyophilized · ≥99% HPLC purity",
+                         "descriptor": "Selective GH-secretagogue research peptide", "price": "$49", "live": True, "sku": "ipamorelin"},
+    "IGF-1 LR3":        {"cls": "GROWTH FACTOR", "spec": "Long-R3 IGF-1 · 1mg lyophilized · ≥99% HPLC purity",
+                         "descriptor": "Insulin-like growth factor research compound", "price": "$79", "live": True, "sku": "igf1-lr3-1mg"},
+    "MOTS-c":           {"cls": "MITOCHONDRIAL PEPTIDE", "spec": "Mitochondrial-derived peptide · 10mg lyophilized · ≥99% HPLC purity",
+                         "descriptor": "Mitochondrial metabolic research peptide", "price": "$55", "live": True, "sku": "mots-c"},
+    "Tesamorelin":      {"cls": "GHRH ANALOG", "spec": "Stabilized GHRH analog · 10mg lyophilized · ≥99% HPLC purity",
+                         "descriptor": "GHRH-analog metabolic research peptide", "price": "$65", "live": True, "sku": "tesamorelin-10mg"},
+    # ── Cognitive ──────────────────────────────────────────────────────────────
+    "Semax":            {"cls": "NEUROPEPTIDE", "spec": "Nootropic heptapeptide · 30mg nasal · research-grade",
+                         "descriptor": "BDNF-modulation research peptide", "price": "$75", "live": True, "sku": "semax"},
+    "Selank":           {"cls": "NEUROPEPTIDE", "spec": "Anxiolytic heptapeptide · 5mg lyophilized · research-grade",
+                         "descriptor": "CNS-signaling research peptide", "price": "$49", "live": True, "sku": "selank-5mg"},
+    # ── Longevity ──────────────────────────────────────────────────────────────
+    "NAD+":             {"cls": "COENZYME", "spec": "NAD+ coenzyme · 500mg vial · research-grade",
+                         "descriptor": "Mitochondrial NAD+ biology research", "price": "$65", "live": True, "sku": "nad-injection"},
+    # ── Aesthetic / melanocortin ───────────────────────────────────────────────
+    "Melanotan-2":      {"cls": "MELANOCORTIN", "spec": "Melanocortin agonist · 10mg lyophilized · ≥99% HPLC purity",
+                         "descriptor": "Melanocortin-receptor research peptide", "price": "$49", "live": True, "sku": "melanotan-2-10mg"},
+    "PT-141":           {"cls": "MELANOCORTIN", "spec": "Bremelanotide · 10mg lyophilized · ≥99% HPLC purity",
+                         "descriptor": "MC4-receptor research peptide", "price": "$49", "live": True, "sku": "pt-141-10mg"},
 }
+
+# Compounds allowed in STATIC / carousel / announcement content but NOT in VIDEO/reels (Marvin
+# 2026-06-23): the melanocortin/aesthetic peptides (tanning, sexual-function) read fine on a product
+# card but are off-tone / platform-risky narrated in a reel. Excluded from the autonomous reel
+# topic pool only — they stay in the image rotation (topic_weights + COMPOUND_CATALOG untouched).
+VIDEO_EXCLUDED_COMPOUNDS = {"Melanotan-2", "PT-141"}
 
 # Health-brand routing: metabolic/weight/results angles run on Acme Health (may run
 # paid); everything else defaults to Labs (RUO, organic-only). MIGRATION 1A / §5.1.
@@ -367,7 +472,11 @@ MODE_B_FACTORS = ["niche_fit", "persona_fit", "format_adaptability", "buyer_inte
 # classify an extracted post's structure and to map it to a template + reconfigure.
 FORMAT_ARCHETYPES = {
     "this_or_that":   {"keywords": ["vs", "versus", "or", "this or that", "which is better"],
-                       "template": "story-poll-pro-dark", "recipe": "This-or-That comparison"},
+                       # carousel deck, NOT story-poll-pro: a clone pours a single Acme topic into
+                       # the format, but story-poll-pro needs two structured options the copywriter
+                       # never generates → it renders hardcoded "BPC-157 vs Semaglutide" sample data
+                       # (Marvin 2026-06-22). A comparison reads well across carousel slides anyway.
+                       "template": "carousel-dark", "recipe": "This-or-That comparison"},
     "myth_bust":      {"keywords": ["myth", "stop", "wrong", "lie", "don't", "actually", "truth"],
                        "template": "story-reel-dark", "recipe": "Myth-bust: 'Stop X / Start Y'"},
     "wish_i_knew":    {"keywords": ["wish i knew", "before i", "i learned", "things i"],
@@ -415,6 +524,12 @@ def log(msg):
     print(f"[research] {msg}", file=sys.stderr)
 
 
+# Tools (by script stem, e.g. "searchapi") that returned a quota/credit-depletion error during
+# THIS run. Populated by run_tool; read by Mode A to avoid shipping blind-rotation duplicates
+# when the discovery API is dead (the ACME-062..065 incident, 2026-06-23).
+DEPLETED_TOOLS: set[str] = set()
+
+
 # ── Cached subprocess tool calls (economy lever) ──────────────────────────────
 
 def run_tool(script, args, ttl=CACHE_TTL, fresh=False):
@@ -429,7 +544,16 @@ def run_tool(script, args, ttl=CACHE_TTL, fresh=False):
     log(f"calling    {script} {' '.join(str(a) for a in args)}")
     r = subprocess.run(argv, capture_output=True, text=True, cwd=WS)
     if r.returncode != 0:
-        log(f"WARN {script} exited {r.returncode}: {(r.stderr or r.stdout)[-300:].strip()}")
+        out = (r.stderr or r.stdout or "")
+        log(f"WARN {script} exited {r.returncode}: {out[-300:].strip()}")
+        # The tool itself fires the Telegram heads-up (api_alerts.note); here we only RECORD that
+        # this API is depleted so the orchestrator can stop falling back to duplicate content.
+        try:
+            import api_alerts
+            if api_alerts.classify(code=r.returncode, body=out):
+                DEPLETED_TOOLS.add(Path(script).stem)
+        except Exception:
+            pass
         return None
     try:
         data = json.loads(r.stdout)
@@ -526,6 +650,23 @@ def gather_signals(topic, fresh=False):
         if link and len(sig["news_sources"]) < 5:
             sig["news_sources"].append({"url": link, "title": item.get("title", ""),
                                         "source": item.get("source", ""), "platform": "news"})
+
+    # YouTube sources (Marvin 2026-06-22: "none of our sources is YouTube — we need that"). This is
+    # a video-first niche, so every brief — especially the trending reel — should cite the relevant
+    # YouTube discussion alongside the news. searchapi already does YouTube (Mode B uses it); one
+    # cheap, cached call per topic. Blend 3 news + 2 YouTube so BOTH show in the card's top-5.
+    yt = run_tool("searchapi.py", ["youtube", topic, "--num", "5"], fresh=fresh)
+    yt_sources = []
+    for v in (yt or {}).get("results", []):
+        link = v.get("link") or v.get("url")
+        if link:
+            yt_sources.append({"url": link, "title": v.get("title", ""),
+                               "source": v.get("channel") or "YouTube", "platform": "youtube"})
+        if len(yt_sources) >= 2:
+            break
+    if yt_sources:                                   # keep all 5 news when no video is found
+        news_only = [s for s in sig["news_sources"] if s.get("platform") == "news"]
+        sig["news_sources"] = news_only[:3] + yt_sources
     return sig
 
 
@@ -612,6 +753,11 @@ def discover_topics(candidates, engine_state, fresh=False):
     blocked = [b.lower() for b in engine_state.get("blocked_topics", [])]
     rejected = eng.rejected_topics()      # learn from TG: don't re-propose a hard-rejected angle
     tw = engine_state.get("topic_weights", {})
+    # Recency/family rotation tiebreaker (Marvin 2026-06-23): with the small catalog the 7-day
+    # window can't supply a fresh pool, so without this the trending signal re-picks the GLP-1s
+    # every day. Penalize a compound whose name OR family was featured recently. Env-gated.
+    penalize = (eng.load_env("ENGINE_TOPIC_RECENCY_PENALTY", "1") or "1") != "0"
+    recent_used = recently_used_compounds() if penalize else []
     scored = []
     for c in candidates:
         cl = c.lower()
@@ -623,6 +769,11 @@ def discover_topics(candidates, engine_state, fresh=False):
             continue
         sig = gather_signals(c, fresh=fresh)
         sc = score_topic(c, sig, tw)
+        if penalize:
+            f = recency_penalty(sc.get("compound") or c, recent_used)
+            if f < 1.0:
+                sc["recency_penalty"] = round(f, 3)
+                sc["final"] *= f
         print_breakdown(sc)
         scored.append(sc)
     scored.sort(key=lambda s: s["final"], reverse=True)
@@ -691,7 +842,16 @@ def bank_source(url, fresh=False):
         raw = run_tool("firecrawl.py", ["scrape", url, "--raw"], ttl=7 * CACHE_TTL, fresh=fresh)
     if not raw:
         return None
-    return source_bank.upsert(url, platform, raw)
+    rec = source_bank.upsert(url, platform, raw)
+    # FEED THE BANK (Marvin 2026-06-22): a long source carries far more than one post — mine a
+    # backlog of distinct angles ONCE per source (only if it has none yet) so the week's extractions
+    # fill the bank for Sunday's bank-first day. One cheap OpenRouter call; fail-soft.
+    if rec and not rec.get("angles") and rec.get("full_transcript"):
+        try:
+            rec = source_bank.propose_angles(rec, n=6)
+        except Exception as ex:
+            log(f"bank angle-mining skipped (non-fatal) for {rec.get('source_id')}: {ex}")
+    return rec
 
 
 def extract_pattern(url, fresh=False):
@@ -848,6 +1008,83 @@ def build_reference(*, url=None, platform="", description="", selection_rational
     return ref
 
 
+# ── draft + duplication gate (Marvin 2026-06-22) ───────────────────────────────
+# The post's TEXT is written first (draft.md), compared against the last 7 days (approved +
+# produced), and any PART that's a near-repeat of a recent post is surgically revised — never the
+# whole draft, and follow-ups/continuations pass. dedup.py is the single authority; this is the
+# image-card glue that maps its rewrites back onto the copywriter tokens.
+def _hook_text(cp: dict, want_carousel: bool) -> str:
+    if want_carousel:
+        s0 = (cp.get("slides") or [{}])[0]
+        keys = ("EYEBROW", "HEAD_1", "HEAD_2_ITALIC", "HEAD_3")
+        return " ".join(str(s0.get(k, "")).strip() for k in keys if s0.get(k)).strip()
+    keys = ("EYEBROW", "HOOK_LINE_1", "HOOK_LINE_2_ITALIC", "HOOK_LINE_3")
+    return " ".join(str(cp.get(k, "")).strip() for k in keys if cp.get(k)).strip()
+
+
+def _draft_from_cp(cp, *, topic, pillar, compound, want_carousel, job_id) -> dict:
+    d = {"job_id": job_id, "pillar": pillar, "compound": compound, "topic": topic,
+         "hook": _hook_text(cp, want_carousel), "body": cp.get("caption", "")}
+    if want_carousel and cp.get("slides"):
+        d["slides"] = [" / ".join(str(s.get(k, "")) for k in ("HEAD_1", "HEAD_2_ITALIC", "HEAD_3", "BODY") if s.get(k))
+                       for s in cp["slides"] if isinstance(s, dict)]
+    return d
+
+
+def _apply_revisions_to_cp(cp, draft, verdict, want_carousel) -> tuple[dict, list[str]]:
+    """Swap ONLY the flagged elements back into the copywriter tokens: body→caption, hook→headline
+    lines (carousel: slide-1 HEAD_*). Everything else is left exactly as written."""
+    _, changed = dedup.revise(draft, verdict)
+    by_el = {p["element"]: (p.get("revised") or "").strip() for p in verdict.get("parts", [])}
+    if "body" in changed and by_el.get("body"):
+        cp["caption"] = by_el["body"]
+    if "hook" in changed and by_el.get("hook"):
+        l1, it, l3 = dedup.split_headline(by_el["hook"])
+        if want_carousel and cp.get("slides"):
+            cp["slides"][0].update(HEAD_1=l1, HEAD_2_ITALIC=it, HEAD_3=l3)
+        else:
+            cp.update(HOOK_LINE_1=l1, HOOK_LINE_2_ITALIC=it, HOOK_LINE_3=l3)
+    return cp, changed
+
+
+def _write_draft_md(job_dir, job_id, draft, *, pillar, persona, compound, brand, dedup_summary=None) -> None:
+    lines = [f"# {job_id} — draft", "",
+             f"- pillar: {pillar} · persona: {persona} · brand: {brand} · compound: {compound or '—'}",
+             f"- topic: {draft.get('topic', '')}", "",
+             "## Hook", draft.get("hook") or "—", "",
+             "## Body / caption", draft.get("body") or "—", ""]
+    if draft.get("slides"):
+        lines += ["## Slides"] + [f"{i + 1}. {s}" for i, s in enumerate(draft["slides"])] + [""]
+    if dedup_summary:
+        lines += ["## Duplication gate", dedup_summary, ""]
+    (job_dir / "draft.md").write_text("\n".join(lines))
+
+
+def dedup_gate(job_dir, job_id, cp, brief, *, topic, pillar, persona, compound, brand, want_carousel) -> dict:
+    """Write the text draft, run the duplication gate, and surgically revise any near-duplicate
+    PART back into cp. Always writes draft.md (the 'text drafts' stage). Fail-open. Returns cp."""
+    if not cp:
+        return cp
+    draft = _draft_from_cp(cp, topic=topic, pillar=pillar, compound=compound,
+                           want_carousel=want_carousel, job_id=job_id)
+    dedup_summary = None
+    if dedup is not None and (eng.load_env("ENGINE_DEDUP", "1") or "1") != "0":
+        try:
+            verdict = dedup.check_draft(draft, dedup.recent_corpus(exclude_job=job_id))
+            cp, changed = _apply_revisions_to_cp(cp, draft, verdict, want_carousel)
+            dedup_summary = dedup.summarize(verdict, changed)
+            if changed:
+                brief["dedup_note"] = dedup_summary
+                draft = _draft_from_cp(cp, topic=topic, pillar=pillar, compound=compound,
+                                       want_carousel=want_carousel, job_id=job_id)
+            log(f"{job_id}: dedup — {dedup_summary}")
+        except Exception as ex:                          # a gate hiccup must never break produce
+            log(f"{job_id}: dedup gate skipped (non-fatal): {ex}")
+    _write_draft_md(job_dir, job_id, draft, pillar=pillar, persona=persona,
+                    compound=compound, brand=brand, dedup_summary=dedup_summary)
+    return cp
+
+
 def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
                    carousel=None, provenance=None, reference=None, job_id=None,
                    dry_run=False, fresh=False, note=None):
@@ -923,6 +1160,11 @@ def assemble_brief(pillar, topic, *, persona=None, brand=None, template=None,
     if not isinstance(cp, dict) or not cp:
         log(f"copywriter.py failed for {job_id} — writing brief without tokens (run copywriter.py later)")
         cp = {}
+
+    # Text draft → duplication gate (surgically revises any near-repeat PART) BEFORE the template
+    # is built. Always writes draft.md. Fail-open — never blocks the morning produce.
+    cp = dedup_gate(job_dir, job_id, cp, brief, topic=topic, pillar=pillar, persona=persona,
+                    compound=compound, brand=brand, want_carousel=want_carousel)
 
     slides = cp.get("slides") if want_carousel else None
     if want_carousel and slides:
@@ -1224,8 +1466,9 @@ class DiscoveryStore:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def load_engine_state():
-    p = WS / "engine_state.json"
-    return json.loads(p.read_text()) if p.exists() else {"topic_weights": {}, "blocked_topics": []}
+    # Delegate to engine.read_state so a fresh clone/worktree (no live engine_state.json — it's
+    # gitignored runtime) seeds from engine_state.example.json instead of losing topic_weights.
+    return eng.read_state() or {"topic_weights": {}, "blocked_topics": []}
 
 
 def cmd_topics(args):
@@ -1233,12 +1476,13 @@ def cmd_topics(args):
     if args.candidates:
         candidates = [c.strip() for c in args.candidates.split(",") if c.strip()]
     else:
-        # Default seed = highest-weighted Acme compounds, but ROTATE: hold back anything used in
-        # the last few jobs so the daily run picks FRESH compounds instead of re-proposing the same
-        # top-weighted few every morning (the 'content recycles / looks identical' bug, 2026-06-22).
+        # Default seed = highest-weighted Acme compounds, but ROTATE on a 7-DAY PRODUCT WINDOW:
+        # hold back any product (compound) that went out in the last 7 days so the daily run picks a
+        # FRESH product related to the research, never re-featuring the same SKU within a week
+        # (Marvin 2026-06-22; supersedes the job-count cooldown for product selection).
         tw = es.get("topic_weights", {})
         ranked = sorted(tw, key=tw.get, reverse=True) or list(COMPOUND_CATALOG)
-        recent = recently_used_compounds()
+        recent = products_in_last_days(7)
         fresh = [c for c in ranked if c not in recent]
         need = args.select + 2
         # Prefer fresh; only if the catalog can't fill the day fall back to the least-recently-used.
@@ -1247,6 +1491,14 @@ def cmd_topics(args):
             log(f"rotation: holding back {recent} (used in the last {_cooldown_jobs()} jobs)")
     log(f"Mode A — scoring {len(candidates)} candidates: {candidates}")
     scored = discover_topics(candidates, es, fresh=args.fresh)
+    # SearchAPI is the only live signal Mode A scores on. If it's depleted, every candidate ties
+    # at the same zero-signal score and selection degenerates to compound rotation -> duplicate
+    # posts (ACME-062..065, 2026-06-23). Refuse to generate; the per-tool Telegram alert
+    # (api_alerts.note) has already asked for drop links. ENGINE_FORCE_DISCOVERY=1 overrides.
+    if "searchapi" in DEPLETED_TOOLS and (eng.load_env("ENGINE_FORCE_DISCOVERY", "") or "").strip() != "1":
+        log("SearchAPI depleted — no live discovery signal; NOT generating blind-rotation briefs "
+            "(they would be duplicates). Telegram heads-up asked for drop links instead.")
+        return
     if not scored:
         log("no candidates survived scoring")
         return
@@ -1328,13 +1580,39 @@ def cmd_outliers(args):
 
 
 def cmd_inbox(args):
-    """Drop-a-link: Marvin/Devon paste a viral URL (any platform) -> reverse-engineer it."""
+    """Drop-a-link: Marvin/Devon paste a viral URL (any platform) -> reverse-engineer it.
+
+    Consults the reference-link ledger (reference_links.py) so a link whose FORMAT we already
+    cloned is SKIPPED (no re-scrape) unless --force; on a fresh clone the link is recorded as
+    used + tied to the job it produced. Fail-open: a ledger hiccup never blocks the clone."""
+    try:
+        import reference_links as _refs
+    except Exception:
+        _refs = None
+    if _refs is not None and not args.dry_run and not getattr(args, "force", False):
+        try:
+            if _refs.is_used(args.url):
+                row = _refs.find(args.url) or {}
+                log(f"reference already used (job {row.get('job_id') or '—'}) — skipping "
+                    f"{args.url}  [use --force to clone again]")
+                return
+        except Exception as ex:
+            log(f"reference-ledger check skipped (non-fatal): {ex}")
     store = DiscoveryStore()
+    before = {p.name for p in JOBS_DIR.glob("ACME-*")}
     _extract_and_brief(args.url, store, persona=args.persona, brand=args.brand,
                        curated=True, acme_topic=args.topic, pillar=args.pillar,
                        carousel=getattr(args, "carousel", None),
                        as_reel=getattr(args, "reel", False),
                        dry_run=args.dry_run, fresh=args.fresh)
+    if _refs is not None and not args.dry_run:
+        new = sorted({p.name for p in JOBS_DIR.glob("ACME-*")} - before)
+        if new:                                       # only record once a brief actually landed
+            try:
+                _refs.mark_used(args.url, job_id=new[-1], who="inbox",
+                                note=f"Mode-B format reference cloned into {new[-1]}")
+            except Exception as ex:
+                log(f"reference-ledger record skipped (non-fatal): {ex}")
 
 
 def cmd_recopy(args):
@@ -1390,6 +1668,12 @@ def cmd_drops(args):
         new = sorted({p.name for p in JOBS_DIR.glob("ACME-*")} - before)
         if new:
             dr.mark(d["id"], "consumed", job_id=new[-1])
+            try:                                       # mirror into the used-references ledger
+                import reference_links as _refs
+                _refs.mark_used(d["url"], job_id=new[-1], who=d.get("who", "telegram"),
+                                note=f"drop {d['id']} cloned into {new[-1]}")
+            except Exception as ex:
+                log(f"reference-ledger record skipped (non-fatal): {ex}")
             consumed += 1
         else:                                         # extract_pattern returned nothing usable
             dr.mark(d["id"], "failed")
@@ -1540,6 +1824,75 @@ def cmd_bank(args):
     log(f"Source Bank: minted {made} brief(s) from {rec['source_id']}")
 
 
+def serve_bank_day(*, n, brand="labs", dry_run=False, fresh=False) -> int:
+    """Bank-FIRST day (Sundays): mint up to `n` NON-TRENDING briefs from the bank's unused angles
+    across all sources — spread across pillars, each archived on use — instead of an external sweep
+    (Marvin 2026-06-22: 'every Sunday search the internal bank first'). Returns how many were minted;
+    the caller tops up externally if this is short (external = the fallback). 0 extraction cost."""
+    pool = [(rec, a) for rec in source_bank.all_sources()
+            for a in source_bank.unused_angles(rec) if a.get("format") != "reel"]
+    if not pool:
+        log("Sunday bank-first: the Source Bank has no unused angles — falling back to external research")
+        return 0
+    store = DiscoveryStore()
+    made, used_pillars = 0, []
+    while pool and made < n:
+        # Prefer a pillar we haven't filled yet this run (spread); else take the next available.
+        idx = next((i for i, (_, a) in enumerate(pool)
+                    if (a.get("pillar") or "science") in NON_TRENDING_PILLARS
+                    and (a.get("pillar") or "science") not in used_pillars), 0)
+        rec, a = pool.pop(idx)
+        pillar = a.get("pillar") if a.get("pillar") in NON_TRENDING_PILLARS else "science"
+        jid = next_job_id()
+        ref = build_reference(
+            url=rec["url"], platform=rec["platform"],
+            description=f"Source Bank angle {a['id']} — {rec['platform']} (Sunday bank-first)",
+            selection_rationale=(f"Reused banked angle {a['id']} from a previously-paid extraction "
+                                 f"(0 new extraction cost): {a['angle'][:120]}"),
+            cloned_format=a.get("format"))
+        ref["segment_id"] = a["id"]
+        if dry_run:
+            log(f"DRY-RUN Sunday bank-first would mint {a['id']} [{a.get('format')}/{pillar}] -> {jid}: {a['angle'][:60]!r}")
+            made += 1
+            used_pillars.append(pillar)
+            continue
+        template = "static-callout-dark" if a.get("format") == "callout" else None
+        carousel = CAROUSEL_DEFAULT_SLIDES if a.get("format") == "carousel" else None
+        brief = assemble_brief(pillar, a["angle"], brand=brand, template=template, carousel=carousel,
+                               job_id=jid, reference=ref, fresh=fresh,
+                               provenance={"discovery_mode": "bank_reuse_sunday",
+                                           "source_id": rec["source_id"], "angle_id": a["id"]})
+        store.add_brief(pillar=pillar, persona=brief["persona"], source_url=rec["url"],
+                        format_type=a.get("format") or "carousel", hook_angle=a["angle"], job_id=jid,
+                        brief_path=str(JOBS_DIR / jid / "brief.json"), reference=ref)
+        source_bank.mark_used(rec, a["id"], jid)         # archive the angle (removed from the pool)
+        made += 1
+        used_pillars.append(pillar)
+        log(f"Sunday bank-first: minted {a['id']} [{a.get('format')}/{pillar}] -> {jid} (0 extraction cost)")
+    log(f"Sunday bank-first: minted {made}/{n} brief(s) from the bank")
+    return made
+
+
+def cmd_run(a):
+    """The full daily build. Mon–Sat: external Mode-A topics (+ Mode-B trending). SUNDAY: bank-FIRST
+    — fill the day from the Source Bank (the week's banked extractions); only top up with an external
+    sweep if the bank is short. Trending still comes from outliers/drops."""
+    select = a.select
+    if eng.today_date().weekday() == 6:                  # 6 = Sunday
+        log("Sunday — bank-first: drawing today's topics from the internal Source Bank")
+        select = max(0, select - serve_bank_day(n=select, brand="labs",
+                                                 dry_run=a.dry_run, fresh=a.fresh))
+        if select == 0:
+            log("Sunday bank-first filled the day from the bank — skipping the external sweep")
+    if select > 0:
+        cmd_topics(argparse.Namespace(candidates=None, select=select, pillar=None,
+                                      carousel=a.carousel, single=a.single,
+                                      dry_run=a.dry_run, fresh=a.fresh, spread=True))
+    if not a.no_outliers:
+        cmd_outliers(argparse.Namespace(query=None, num=15, extract=True, carousel=a.carousel,
+                                        single=a.single, dry_run=a.dry_run, fresh=a.fresh))
+
+
 def _reel_made_today():
     """True if the autonomous reel step already minted a reel today (idempotency marker)."""
     return eng.read_state().get("last_reel_created_date") == eng.today_pt()
@@ -1571,11 +1924,16 @@ def cmd_reel_today(args):
     es = load_engine_state()
     tw = es.get("topic_weights", {})
     ranked = sorted(tw, key=tw.get, reverse=True) or list(COMPOUND_CATALOG)
-    recent = recently_used_compounds()           # same rotation as the image run — no repeat reel compound
+    ranked = [c for c in ranked if c not in VIDEO_EXCLUDED_COMPOUNDS]   # aesthetic peptides: image-only, never reels
+    recent = products_in_last_days(7)            # same 7-day product window as the image run — no repeat reel compound
     candidates = ([c for c in ranked if c not in recent] + [c for c in reversed(recent) if c in ranked])[:5] or ranked[:5]
     log(f"reel-today [{pillar}] — scoring {len(candidates)} candidates for the day's reel topic"
         + (f" (holding back {recent})" if recent else ""))
     scored = discover_topics(candidates, es, fresh=args.fresh)
+    if "searchapi" in DEPLETED_TOOLS and (eng.load_env("ENGINE_FORCE_DISCOVERY", "") or "").strip() != "1":
+        log("SearchAPI depleted — no live signal to pick the reel topic; skipping (would be a "
+            "blind-rotation duplicate). Telegram heads-up asked for drop links instead.")
+        return
     if not scored:
         log("no topic survived scoring — no reel today")
         return
@@ -1634,6 +1992,7 @@ def main():
     pi.add_argument("--carousel", nargs="?", type=int, const=CAROUSEL_DEFAULT_SLIDES, metavar="N",
                     help="Clone the dropped link into a full N-slide carousel instead of a single card. Default N=5.")
     pi.add_argument("--reel", action="store_true", help="Clone the dropped link into a type=reel concept (F7) instead of an image")
+    pi.add_argument("--force", action="store_true", help="Clone even if this link is already in the reference-link ledger (reference_links.py)")
     pi.add_argument("--dry-run", action="store_true", help="Extract + score only; no brief")
     pi.add_argument("--fresh", action="store_true", help="Bypass the API cache")
     pi.set_defaults(func=cmd_inbox)
@@ -1681,14 +2040,7 @@ def main():
                          "the Trending slot (produce_daily passes this so the drop replaces the outlier).")
     pr.add_argument("--dry-run", action="store_true")
     pr.add_argument("--fresh", action="store_true")
-    pr.set_defaults(func=lambda a: (
-        cmd_topics(argparse.Namespace(
-            candidates=None, select=a.select, pillar=None, carousel=a.carousel, single=a.single,
-            dry_run=a.dry_run, fresh=a.fresh, spread=True)),   # spread → one brief per non-trending pillar
-        None if a.no_outliers else
-        cmd_outliers(argparse.Namespace(query=None, num=15, extract=True,
-                                        carousel=a.carousel, single=a.single,
-                                        dry_run=a.dry_run, fresh=a.fresh))))
+    pr.set_defaults(func=cmd_run)   # Sunday bank-first → external fallback; Mode-A topics + Mode-B trending
 
     args = ap.parse_args()
     CACHE_DIR.mkdir(parents=True, exist_ok=True)

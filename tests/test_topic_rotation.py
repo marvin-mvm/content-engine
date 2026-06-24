@@ -70,6 +70,32 @@ def main():
         finally:
             eng.JOBS_DIR = orig
 
+    # Recency + FAMILY penalty (Marvin 2026-06-23): with only ~12 SKUs at 5 posts/day the 7-day
+    # window can't supply a fresh pool, so trending alone kept re-picking GLP-1s. After ANY GLP-1
+    # the whole incretin family is down-weighted, breaking the Tirzepatide/Semaglutide cluster.
+    check("GLP-1 compounds share one rotation family",
+          r.compound_family("Tirzepatide") == r.compound_family("Semaglutide") == r.compound_family("Retatrutide"))
+    check("a non-GLP-1 buckets separately",
+          r.compound_family("BPC-157") != r.compound_family("Tirzepatide"))
+    recent_glp1 = ["Tirzepatide", "BPC-157", "TB-500"]
+    check("a recently-used GLP-1 is penalized", r.recency_penalty("Tirzepatide", recent_glp1) < 0.5)
+    check("a FAMILY-mate of a recent GLP-1 is ALSO penalized",
+          r.recency_penalty("Semaglutide", recent_glp1) < 0.5)
+    check("a fresh non-GLP-1 keeps full weight", r.recency_penalty("NAD+", recent_glp1) == 1.0)
+    check("penalty flips ranking: a fresh NAD+ outranks a hotter but recently-used GLP-1",
+          0.9 * r.recency_penalty("NAD+", recent_glp1) > 1.0 * r.recency_penalty("Tirzepatide", recent_glp1))
+    check("empty recency list is a no-op (full weight)", r.recency_penalty("Tirzepatide", []) == 1.0)
+
+    # Aesthetic/melanocortin peptides are IMAGE-only — excluded from autonomous reel topics but kept
+    # in the image rotation (Marvin 2026-06-23).
+    check("video-excluded set is Melanotan-2 + PT-141",
+          r.VIDEO_EXCLUDED_COMPOUNDS == {"Melanotan-2", "PT-141"})
+    check("video-excluded compounds stay in the image catalog",
+          {"Melanotan-2", "PT-141"} <= set(r.COMPOUND_CATALOG))
+    reel_pool = [c for c in r.COMPOUND_CATALOG if c not in r.VIDEO_EXCLUDED_COMPOUNDS]
+    check("video-excluded compounds are NOT in the reel pool",
+          not ({"Melanotan-2", "PT-141"} & set(reel_pool)))
+
     # Frame rotation: consecutive days yield DIFFERENT hooks for the same pillar.
     d0 = date(2026, 6, 22)
     frames = {r.frame_for("stack", date.fromordinal(d0.toordinal() + i)) for i in range(3)}

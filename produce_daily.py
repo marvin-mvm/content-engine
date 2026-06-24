@@ -39,6 +39,10 @@ import sys
 from pathlib import Path
 
 import engine as e
+try:
+    import dedup            # reel-script duplication gate (Marvin 2026-06-22) — fail-open
+except Exception:
+    dedup = None
 
 PY = sys.executable or "python3"
 RESEARCH = str(e.WORKSPACE / "research.py")
@@ -150,6 +154,45 @@ def build_x_thread(slides: list, brief: dict, link: str | None) -> dict | None:
     return {"text": tweets[0], "thread": tweets[1:]}
 
 
+def _reel_dedup(job_dir: Path, job_id: str) -> None:
+    """Duplication gate on the reel SCRIPT (and overlay hook), run after RV2 writes brief.script
+    and BEFORE the concept is pushed to GATE 1 — so we never spend a review slot (or, later, a
+    Higgsfield credit) on a reel that just repeats a recent post. Surgically swaps only the
+    near-duplicate part; follow-ups pass. Writes draft.md. Fail-open (Marvin 2026-06-22)."""
+    if dedup is None or (e.load_env("ENGINE_DEDUP", "1") or "1") == "0":
+        return
+    brief = e.load_json(job_dir / "brief.json") or {}
+    if not brief.get("script"):
+        return
+    ov = brief.get("overlay") or {}
+    hook = " ".join(str(ov.get(k, "")).strip() for k in
+                    ("EYEBROW", "HOOK_LINE_1", "HOOK_LINE_2_ITALIC", "HOOK_LINE_3") if ov.get(k)).strip()
+    draft = {"job_id": job_id, "pillar": brief.get("pillar"), "compound": brief.get("compound"),
+             "topic": brief.get("topic"), "script": brief.get("script"), "hook": hook}
+    try:
+        verdict = dedup.check_draft(draft, dedup.recent_corpus(exclude_job=job_id))
+    except Exception as ex:                              # a gate hiccup must never break produce
+        e.log(f"{job_id}: reel dedup skipped (non-fatal): {ex}")
+        return
+    _, changed = dedup.revise(draft, verdict)
+    by_el = {p["element"]: (p.get("revised") or "").strip() for p in verdict.get("parts", [])}
+    if "script" in changed and by_el.get("script"):
+        brief["script"] = by_el["script"]
+    if "hook" in changed and by_el.get("hook") and ov:
+        l1, it, l3 = dedup.split_headline(by_el["hook"])
+        ov.update(HOOK_LINE_1=l1, HOOK_LINE_2_ITALIC=it, HOOK_LINE_3=l3)
+        brief["overlay"] = ov
+    summary = dedup.summarize(verdict, changed)
+    if changed:
+        brief["dedup_note"] = summary
+        (job_dir / "brief.json").write_text(json.dumps(brief, ensure_ascii=False, indent=2))
+    e.log(f"{job_id}: reel dedup — {summary}")
+    (job_dir / "draft.md").write_text(
+        f"# {job_id} — reel draft\n\n- pillar: {brief.get('pillar')} · compound: {brief.get('compound') or '—'}\n"
+        f"- topic: {brief.get('topic', '')}\n\n## Hook\n{hook or '—'}\n\n## Script\n{brief.get('script', '')}\n"
+        + (f"\n## Duplication gate\n{summary}\n" if summary else ""))
+
+
 def build_captions(job_dir: Path, force: bool = False) -> dict | None:
     """THE BRIDGE: write captions.json (per-platform, RUO-enforced, X-fitted) for a job.
     Returns the captions dict, or None if the brief is missing / nothing could be built."""
@@ -257,10 +300,34 @@ def render_job(job_dir: Path) -> bool:
     return True
 
 
+def retheme_to_slot(job_dir: Path, slot: str | None, brand: str) -> None:
+    """Force this image job's template to the dark/light mode its ASSIGNED slot needs (content.md:
+    morning 08:00/11:00 → light, else dark) BEFORE it renders. Fixes the same-pillar-day case where
+    the assembly-time pillar theme is wrong — e.g. a trending post slotted into 08:00 must be light,
+    not dark. Swaps only the -dark/-light suffix; the two templates share one token set, so the render
+    is otherwise identical. No-op for reels / unthemed templates / missing briefs."""
+    brief = e.load_json(job_dir / "brief.json")
+    if not isinstance(brief, dict) or brief.get("type") == "reel":
+        return
+    img = brief.get("image")
+    if not isinstance(img, dict):
+        return
+    tpl = img.get("template") or ""
+    want = e.theme_for_slot(slot, brand)
+    other = "dark" if want == "light" else "light"
+    needle = f"-{other}.html"
+    if not tpl.endswith(needle):                  # already correct mode (or not a -dark/-light template)
+        return
+    img["template"] = tpl[: -len(needle)] + f"-{want}.html"
+    (job_dir / "brief.json").write_text(json.dumps(brief, ensure_ascii=False, indent=2))
+    e.log(f"{job_dir.name}: re-themed → {want} for slot {slot} ({Path(img['template']).name})")
+
+
 def package_job(job_dir: Path, pillar: str, brand: str, slot: str | None,
                 force: bool = False) -> bool:
     """Render + build captions + set status for one job. Returns True if review-ready."""
     job_id = job_dir.name
+    retheme_to_slot(job_dir, slot, brand)         # theme follows the ASSIGNED slot, not the pillar
     ok_render = render_job(job_dir)
     caps = build_captions(job_dir, force=force) if ok_render else None
     if ok_render and caps:
@@ -358,6 +425,7 @@ def handle_reel(job_dir: Path, *, generate: bool = False, dry_run_push: bool = F
             e.log(f"{job_id}: RV2 blocked (likely a RED concept) — marking failed, no credit at risk")
             e.write_status(job_id, "failed", pillar=pillar, brand=brand, note="script compliance-blocked")
             return "failed"
+    _reel_dedup(job_dir, job_id)   # duplication gate on the script BEFORE the concept burns a GATE-1 slot
     build_captions(job_dir, force=force)
     if _sub([PY, TELEGRAM, "push-concept", str(job_dir)] + (["--dry-run"] if dry_run_push else [])).returncode != 0:
         e.log(f"{job_id}: concept push failed")

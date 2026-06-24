@@ -52,6 +52,7 @@ def main():
     # Isolate the bank in a temp dir so the real output/research/sources is untouched.
     tmp = Path(tempfile.mkdtemp(prefix="sbtest_"))
     sb.SOURCES_DIR = tmp
+    sb.USED_LOG = tmp / "_used.jsonl"   # archive-on-use log (mark_used appends here)
 
     # 1 — FULL transcript parse, no truncation; count coercion.
     ft, cap, eng = sb.normalize_payload(long_raw())
@@ -119,10 +120,13 @@ def main():
     sb.save(rec3)
     check("unused_angles excludes used", len(sb.unused_angles(rec3)) == 2)
     check("unused_angles filters by format", [a["id"] for a in sb.unused_angles(rec3, fmt="reel")] == ["ang-001"])
+    # archive-on-use (Marvin 2026-06-22): mark_used REMOVES the angle from the pool + logs it.
     sb.mark_used(rec3, "ang-001", "ACME-010")
     re3 = sb.load("https://youtu.be/Q")
-    used = [a for a in re3["angles"] if a["id"] == "ang-001"][0]
-    check("mark_used persists used + job_id", used["used"] and used["job_id"] == "ACME-010")
+    check("mark_used removes the angle from the servable pool",
+          "ang-001" not in [a["id"] for a in re3["angles"]])
+    check("mark_used archives to _used.jsonl with the job_id",
+          sb.USED_LOG.exists() and '"ACME-010"' in sb.USED_LOG.read_text())
 
     # 7 — the compliance gate propose_angles relies on actually flags RED claims.
     check("red_hits flags a RED angle", bool(red_hits("This peptide cures inflammation and burns fat")))

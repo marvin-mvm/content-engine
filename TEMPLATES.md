@@ -5,6 +5,30 @@
 > production and how** — the "task list" of wired vs not. Brand hard-rules live in
 > [SOUL.md](SOUL.md); production recipes in [PIPELINE_RUNBOOK.md](PIPELINE_RUNBOOK.md).
 
+## ⛔ Rendering guardrails — READ BEFORE choosing a template (Marvin 2026-06-22)
+
+Learned the hard way on the ACME-052..061 reference batch (overlapping text + every card on the same
+broken poll template). Three rules:
+
+1. **Only auto-route to templates the copywriter actually FILLS.** The default copywriter output is
+   `EYEBROW / HOOK_LINE_1/2/3 / SUBTITLE_TEXT / CTA_LABEL / caption` (+ `slides` with `--carousel`).
+   - ✅ **story-reel** (single card) — filled by default copy. SHORT hooks only.
+   - ✅ **carousel** (deck) — filled by `--carousel` copy (`slides.json`). Robust to long copy.
+   - ✅ **static-compound** (product spec) — filled from `COMPOUND_CATALOG` (short structured fields). **Most robust.**
+   - ⛔ **story-poll-pro** — comparison body is HARDCODED ("BPC-157 vs Semaglutide"); copywriter never
+     fills it. **Never auto-select it.** Comparison/poll angles → carousel deck instead.
+   - ⚠️ **static-callout** needs a SHORT `STAT` (e.g. "14.9%"); a sentence overflows it (that's why
+     `quote` → story-reel). `story-product` needs the full product token set.
+
+2. **Long copy must not collide with fixed layout.** Templates that pin the body at a fixed `top:`
+   overlap when a headline wraps. `carousel-{dark,light}` is now a top-anchored **flow** column
+   (headline pushes body down); `story-reel-{dark,light}`'s hook zone is **bounded** (`bottom`+`overflow`)
+   so it clips instead of colliding. If you add/edit a text-heavy template, use flow, not fixed `top:`.
+
+3. **ALWAYS eyeball the rendered PNG before pushing to review.** `post.py` "rendered" ≠ correct. Open
+   the image (or a slide) and check for overlap / boilerplate / wrong-topic sample data. A clean
+   `captions.json` says nothing about the picture.
+
 ## Theme rule (light vs dark) — when to use
 Theme follows **brand**, now enforced for **every** template by `research.retheme()`:
 - **Dark** (`#1A2E1E` forest) → **Acme Labs** (RUO / peptides).
@@ -22,15 +46,18 @@ the caller forces neither a template nor a carousel. Result:
 | Pillar | Mon | Tue | Wed | Thu | Fri | Sat | Sun |
 |---|---|---|---|---|---|---|---|
 | Science | carousel | story-reel | reel¹ | carousel | story-reel | carousel | reel¹ |
-| Stack | carousel | **story-product** | carousel | **story-poll-pro** | carousel | **story-product** | carousel |
-| Trending | reel¹ | carousel | reel¹ | **story-poll-pro** | reel¹ | story-reel | reel¹ |
-| Proof | carousel | static-callout | carousel | static-callout | carousel | static-callout | carousel |
-| Founder | static-callout | static-callout | static-callout | carousel | static-callout | carousel | static-callout |
+| Stack | carousel | **story-product** | carousel | **carousel²** | carousel | **story-product** | carousel |
+| Trending | reel¹ | carousel | reel¹ | **carousel²** | reel¹ | story-reel | reel¹ |
+| Proof | carousel | static-callout | carousel | quote→story-reel | carousel | static-callout | carousel |
+| Founder | quote→story-reel | static-callout | quote→story-reel | carousel | static-callout | carousel | quote→story-reel |
 
 ¹ reel cells fire only on the pillar's alternating video day (`slot_wants_reel`); otherwise the
-image fallback (carousel) is used. Viral **this-or-that** outliers also route to `story-poll-pro`
-(`FORMAT_ARCHETYPES`). **Daily default changed:** the engine now follows this rotation instead of
-blanket-carousel. Force modes: `produce_daily run --carousel` (all decks) / `--no-carousel` (all single).
+image fallback (carousel) is used.
+² **comparison/poll formats render as CAROUSEL decks, NOT story-poll-pro** (Marvin 2026-06-22): the
+`compare` / `this_or_that` / `poll` formats — and viral this-or-that clones (`FORMAT_ARCHETYPES`) —
+all route through `daily_image_template`'s `_CAROUSEL_FORMATS` set to a carousel. **`story-poll-pro`
+is NO LONGER auto-selected anywhere** (see the ⛔ note in the status table). **Daily default:** the
+engine follows this rotation. Force modes: `produce_daily run --carousel` / `--no-carousel`.
 
 ---
 
@@ -41,7 +68,7 @@ blanket-carousel. Force modes: `produce_daily run --carousel` (all decks) / `--n
 | **Reel · b-roll molecular** | `reel-overlay-broll-{dark,light}` | 1080×1920 | Video underlay + transparent overlay | ✅ **DEFAULT reel** | `research.assemble_reel_brief` → `brief.overlay` → `reel.py` → `produce.py --video-underlay` |
 | **Reel · Person on Camera** | `reel-overlay-studio-{dark,light}` | 1080×1920 | Video underlay + transparent overlay | ✅ wired (manual) | same path; for reels with **real talking-head footage** (not auto-generated) |
 | **Story · Product** | `story-product-{dark,light}` | 1080×1920 | Static card (token) | ✅ wired | `brief.image` (`post.py`); `_map_tokens` fills from the compound catalog; `alts` of `stack` |
-| **Story · Poll** | `story-poll-pro-{dark,light}` | 1080×1920 | Static card (token) | ✅ wired | `brief.image` (`post.py`); `_map_tokens` defaults + copywriter hook; `alts` of `science`/`trending` |
+| **Story · Poll** | `story-poll-pro-{dark,light}` | 1080×1920 | Static card (token) | ⛔ **MANUAL ONLY — NOT auto-wired** | `_map_tokens` fills only the hook; the poll's two options + 4 rows are **HARDCODED** ("BPC-157 vs Semaglutide"). The copywriter never generates them, so any auto-selected poll renders SAMPLE data. Removed from all rotations/alts/archetypes 2026-06-22. Re-enable only after autonomous poll-data generation exists; until then set `brief.image.set` by hand. |
 | **Carousel · premium** | `carousel-premium-{dark,light}` | 1080×1350 ×10 | React deck (NOT token) | ⚠️ **renders, not auto-engine-wired** | `render_carousel.py` → per-slide PNGs. Per-post data-injection is a follow-up (see below) |
 | **Carousel · legacy** | `carousel-{dark,light}` | 1080×1350 | Static card/slides (token) | ✅ kept as engine carousel | `brief.image.carousel` (`post.py --carousel`) — **unchanged** |
 | Static callout / compound, story-reel, story-poll (legacy) | `static-*`, `story-reel-*`, `story-poll` | — | Static (token) | ✅ unchanged (legacy) | as before |
@@ -98,9 +125,12 @@ poll). Override any token per-post via `brief.image.set`.
 - **story-product** (31 tokens): product announcement / restock. `COMPOUND`, `SKU`, `DOSE`, `PRICE`,
   `CLASS`, spec rows, COA callout map from `COMPOUND_CATALOG`. `PRODUCT_IMAGE` defaults to a generic
   vial — pass a real SKU photo for a specific product.
-- **story-poll-pro** (26 tokens): engagement poll / this-or-that. Hook fills from copywriter; the two
-  poll options + 4 icon rows default to a BPC-157↔Semaglutide compare — override per-poll.
-  - *Follow-up:* fully autonomous poll generation needs copywriter to emit poll options + row copy.
+- **story-poll-pro** (26 tokens): engagement poll / this-or-that. ⛔ **MANUAL ONLY.** Hook fills from
+  copywriter, but the two poll options + 4 icon rows are **HARDCODED to a BPC-157↔Semaglutide compare**
+  in `_map_tokens` — the copywriter never emits them. So any *auto-selected* poll ships that sample data
+  regardless of topic (this caused the ACME-052..061 mess: 8 single-compound clones all rendered the same
+  BPC-157-vs-Sema poll). It is removed from every rotation/alt/archetype; only use it by hand-setting
+  `brief.image.set`. *Follow-up to re-enable autonomously:* copywriter must emit `POLL_A_*`/`POLL_B_*`+`ROW*`.
 
 Get the token list for any template: `python3 produce.py <template> --tokens`.
 
@@ -136,8 +166,9 @@ Until then the **legacy `carousel-dark/light`** remains the engine's token-drive
 
 **✅ ALSO DONE (2026-06-20 round 2):**
 - **Story templates are now auto-SELECTED by the engine** on their §3.2 slots (table above) — not just
-  manual. `story-product` lands on stack product days, `story-poll-pro` on stack-compare / trending
-  this-or-that days, with brand-correct theme.
+  manual. `story-product` lands on stack product days. (`story-poll-pro` was auto-selected on
+  stack-compare / trending this-or-that days, but that was **reverted 2026-06-22** — those days now
+  render carousels; see the ⛔ guardrail below.) Theme is brand-correct via `retheme()`.
 - **Theme is correct for every template** (health → light) via `retheme()`.
 - **Product image is non-strict:** `story-product` shows a labelled placeholder (the compound name +
   "image pending") when `PRODUCT_IMAGE` is empty or fails to load; a real per-SKU photo (passed via

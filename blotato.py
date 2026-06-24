@@ -94,11 +94,21 @@ def mcp_call(tool_name, arguments, api_key):
             body = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
+        try:                                   # quota/credit exhaustion -> Telegram heads-up
+            import api_alerts
+            api_alerts.note("blotato", code=e.code, body=body)
+        except Exception:
+            pass
         sys.exit(f"ERROR: Blotato MCP {e.code} on {tool_name}: {body[:400]}")
     except urllib.error.URLError as e:
         sys.exit(f"ERROR: network failure: {e}")
 
     if "error" in body:
+        try:                                   # an in-band quota/limit error also pings TG
+            import api_alerts
+            api_alerts.note("blotato", body=str(body["error"]))
+        except Exception:
+            pass
         sys.exit(f"ERROR: {tool_name} failed: {body['error']}")
 
     result = body.get("result", {})

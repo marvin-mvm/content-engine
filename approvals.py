@@ -134,6 +134,24 @@ def apply_command(verb: str, job_id: str, note: str, who: str = "telegram",
     if (e.read_status(job_id) or {}).get("status") == "awaiting_concept" \
             and verb in ("APPROVE", "REJECT", "REVISE", "HOLD"):
         return _apply_concept(verb, job_id, note, who, reply, job_dir)
+
+    # F7 GATE-2 guard (Marvin 2026-06-23, ACME-046): a reel may only be APPROVED for POSTING once it
+    # has actually been generated and pushed to the final gate. Without this, a SECOND APPROVE on a
+    # concept-approved-but-not-yet-rendered reel slips past the concept route above and writes the
+    # publish sign-off (qc.json) on an un-generated reel — the double-APPROVE hole. A reel is
+    # posting-ready only at status=pushed with a rendered file present.
+    brief = e.load_json(job_dir / "brief.json") or {}
+    if verb == "APPROVE" and brief.get("type") == "reel":
+        st_now = (e.read_status(job_id) or {}).get("status")
+        rendered = any((job_dir / n).exists() for n in (f"{job_id}-final.mp4", "captioned.mp4"))
+        if st_now != "pushed" or not rendered:
+            msg = (f"⚠️ {job_id}: not ready for a posting APPROVE — the reel isn't generated / at final "
+                   f"review yet (status={st_now or '—'}). Concept approval only clears GENERATION; once "
+                   "the finished reel is rendered and pushed to the group, APPROVE then schedules it.")
+            e.log(msg)
+            if reply:
+                tg.send_text(msg, dry_run=False)
+            return msg
     qc = job_dir / "qc.json"
 
     if verb == "APPROVE":

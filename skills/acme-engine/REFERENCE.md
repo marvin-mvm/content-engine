@@ -29,8 +29,8 @@ Orchestrated by **Claude Code + macOS launchd** (4 jobs). All state is local fil
 
 | Time (PT) | launchd job | Command | Does |
 |---|---|---|---|
-| 05:30 | `co.acme.engine.produce` | `produce_daily.py run` | research → 5 pillar briefs + drained link-drops → render templates (0 credits) → captions → manifest |
-| 07:00 | `co.acme.engine.review` | `telegram.py push-day` | push each produced post to the Telegram group for approval |
+| 05:30 | `co.acme.engine.produce` | `produce_daily.py run` | research (Sun = bank-first) → text draft → **dedup gate** (vs last-7d) → 5 pillar briefs + drained link-drops → render templates (0 credits) → captions → manifest |
+| 07:00 | `co.acme.engine.review` | `telegram.py push-day --gap 15` | push each produced post to the Telegram group for approval (15s between sends so the batch can't re-order) |
 | every 5 min | `co.acme.engine.approvals` | `approvals.py poll` | apply A/R/E replies; capture pasted link-drops |
 | 08/11/13/16/19 | `co.acme.engine.publish` | `publish_slot.py` | publish each APPROVED post for that slot (dry-run until `GO_LIVE`) |
 
@@ -46,19 +46,20 @@ searchapi 20 · apify 3 · reel 135 real Higgsfield credits (~1 reel/day).
 | Module | Role |
 |---|---|
 | `engine.py` | shared core: paths, slots, caps, flags, trust score, manifest, decision ledger, **alert/guard_main** |
-| `research.py` | Mode A (topic discovery + scoring) · Mode B (viral-outlier/link clone) · pillar spread · drops consumer · recopy |
-| `produce_daily.py` | morning orchestrator: produce, the copy→captions **bridge**, reel state-machine, image re-produce |
+| `research.py` | Mode A (topic discovery + scoring) · Mode B (viral-outlier/link clone) · pillar spread · drops consumer · recopy · **text draft + dedup gate** · 7-day product window · **Sunday bank-first** (`cmd_run`/`serve_bank_day`) |
+| `produce_daily.py` | morning orchestrator: produce, the copy→captions **bridge**, reel state-machine, image re-produce, **reel-script dedup gate** (`_reel_dedup`) |
 | `copywriter.py` | writes brand-voice copy/captions/hashtags/alt-text (OpenRouter LLM) — imports `compliance.py` |
 | `compliance.py` | the single RED/YELLOW/GREEN claims authority + RUO |
+| `dedup.py` | the single **content-duplication** authority: `recent_corpus(7)` + LLM judge `check_draft()` + surgical `revise()` (fail-open; `.env ENGINE_DEDUP=0`) |
 | `post.py` | render a type=image job → PNG(s) via `produce.py` (0 credits) |
 | `produce.py` | template renderer: single PNG, carousel (PNG/slide), **video-underlay** (overlay over clean video) |
 | `reel.py` | reel finisher: overlay model (video inside template) or legacy burned-in captions |
 | `reel_video.py` / `reel_captions.py` / `script.py` | reel b-roll (Higgsfield) / TTS+caption / spoken script |
-| `telegram.py` / `approvals.py` | push review cards / read replies + link-drops (dedicated engine bot) |
+| `telegram.py` / `approvals.py` | push review cards (image+card as ONE message; `--gap`/`--resend`; tap-to-copy commands; link previews off) / read replies + link-drops (dedicated engine bot) |
 | `decisions.py` + `engine` ledger | A/R/E learning ledger (`output/engine/decisions.jsonl`) |
 | `drops.py` | manual link-drop queue (any TG user → Trending) |
 | `apify.py` / `searchapi.py` / `firecrawl.py` / `blotato.py` | social/video scrape (incl. X) / discovery search / **article scrape (sole article extractor)** / publish+schedule CLI (no longer extracts) |
-| `source_bank.py` | harvest a source's FULL transcript once, reuse angles (0 re-spend) |
+| `source_bank.py` | harvest a source's FULL transcript once, mine reusable angles (0 re-spend); **archive-on-use** (used angle → `_used.jsonl`, source pruned when spent); feeds **Sunday bank-first** |
 | `publish.py` / `publish_slot.py` / `schedule.py` | publish one job / publish a slot / native Blotato schedule |
 | `sheetlog.py` | **RETIRED** (no-op; Sheets path removed at cutover) |
 
@@ -117,9 +118,14 @@ approved sage→cream light bg).
 **Fonts (only these):** DM Sans (headlines/UI/body) · **Cormorant Garamond Bold Italic** (emphasis
 words within headlines ONLY) · DM Mono (data, compound names, COA, tagline). Never Inter/Roboto/Helvetica.
 
-**Dark vs light = by SLOT** (`research.theme_for`, content.md §9/§18-20): morning feed (**science 08:00,
-stack 11:00**) = **light**; midday/evening (**trending, proof, founder**) = **dark**. (Acme Health, if
-ever used, stays light.) This replaced the old brand→theme tie.
+**Dark vs light = by the ASSIGNED SLOT** (content.md §9/§18-20): the **08:00 + 11:00** morning slots =
+**light**; **13:00 / 16:00 / 19:00** = **dark**. (Acme Health, if ever used, stays light.) The
+authority is `engine.theme_for_slot(slot, brand)`; producers call `produce_daily.retheme_to_slot()`
+after `assign_slots` to force each card's template to its slot's mode BEFORE render. On a standard
+5-pillar day the pillar→slot map is 1:1, so the assembly-time `research.theme_for` (pillar-keyed) guess
+already matches — but a **same-pillar-heavy day** (e.g. 4× trending from the bank-first/dedup flow) puts
+trending posts into the morning slots, and the slot re-theme is what keeps those **light** (was the
+"all dark / no morning" bug). Replaced the old brand→theme tie.
 
 **Brand bar** on every template: logomark + `ACME LABS` (DM Mono caps) + tagline
 `PEPTIDES · PERFORMANCE · LONGEVITY` + `acmelabs.co`. Voice: scientific precision + accessible
@@ -134,8 +140,8 @@ education; premium biotech, not spa-wellness; confident not clinical.
 | Carousel | `carousel-{dark,light}.html` | 1080×1350/slide | multi-slide deck (`produce.py --carousel slides.json`) |
 | Static callout | `static-callout-{dark,light}.html` | 1080×1080 | stat/data card |
 | Static compound | `static-compound-{dark,light}.html` | 1080×1350 | product/compound feature (class + COA chips, price) |
-| Story/reel card | `story-reel-{dark,light}.html` | 1080×1920 | story card / reel cover |
-| Story poll | `story-poll-pro-{dark,light}.html` | 1080×1920 | this-or-that / comparison |
+| Story/reel card | `story-reel-{dark,light}.html` | 1080×1920 | story card / reel cover (SHORT hooks; hook zone is bounded so long hooks clip, not overlap) |
+| Story poll | `story-poll-pro-{dark,light}.html` | 1080×1920 | ⛔ **MANUAL ONLY — never auto-select.** Comparison body is HARDCODED ("BPC-157 vs Semaglutide"); copywriter doesn't fill it. Comparison/poll angles → carousel deck. (Marvin 2026-06-22) |
 | Story product | `story-product-{dark,light}.html` | 1080×1920 | product story |
 | Reel overlay (b-roll) | `reel-overlay-broll-{dark,light}.html` | 1080×1920 | **transparent overlay** composited over clean video |
 | Reel overlay (studio) | `reel-overlay-studio-{dark,light}.html` | 1080×1920 | same, for talking-head footage |
@@ -144,6 +150,13 @@ education; premium biotech, not spa-wellness; confident not clinical.
 
 All verified rendering (dark+light) at 0 credits. The image brief points `post.py` at the template via
 `brief.image.template` (+ `carousel: slides.json` for decks).
+
+**⛔ Guardrails (Marvin 2026-06-22, ACME-052..061 batch — see TEMPLATES.md "Rendering guardrails"):**
+- Auto-route only to templates the copywriter FILLS: **story-reel** (short hook), **carousel** (any length,
+  robust), **static-compound** (most robust). **Never `story-poll-pro`** (hardcoded comparison body) and
+  feed **static-callout** only a short STAT. Comparison/this-or-that/poll formats → **carousel deck**.
+- After `post.py`, **open the rendered PNG/slide and check it** — a clean render + clean `captions.json`
+  does NOT mean the picture is right (watch for text overlap, boilerplate, wrong-topic sample data).
 
 ---
 
@@ -213,13 +226,18 @@ imagery; X most lenient but still no medical claims.
 ## 7. Telegram (the dedicated engine bot — `ENGINE_TELEGRAM_*`, separate from OpenClaw's)
 
 **Three functions:**
-1. **Review (A/R/E)** — the engine pushes a card per post (hook, caption preview, pillar, persona,
-   slot, source). Reply:
+1. **Review (A/R/E)** — the engine pushes ONE message per post: the image/carousel/reel with the
+   review card (hook, caption preview, pillar, persona, slot, source) as its **caption**, so text and
+   creative never drift apart. The card's reply commands are each on their own line as inline code, so
+   tapping one **copies it** in Telegram. Source URLs stay clickable but **web-page previews are off**
+   (no preview image bloating the message). Reply:
    - `APPROVE ACME-NNN` → writes `qc.json` + `status=approved` → publishes at its slot (+trust).
    - `REJECT ACME-NNN reason` → discarded; reason logged (−trust); steers future content away.
    - `REVISE ACME-NNN note` → re-made from your note (images **and** reels), re-pushed.
    - `HOLD ACME-NNN` → defer, no score change.
    Reels have the same A/R/E at **GATE 1** (concept, pre-credit) then **GATE 2** (final).
+   `push-day --gap 15` spaces sends so a batch can't arrive out of order; `--resend` re-pushes cards
+   already in front of a human (to replace jumbled/mis-themed originals).
 2. **Link-drops** — any group member pastes a content URL → captured into the drop queue → becomes the
    next Trending post. The bot must be a **group admin** (or privacy off) to see members' messages.
 3. **Alerts** — "published" / "failed" notices. **Failure alerts are live** (`engine.alert` /
@@ -293,12 +311,23 @@ and the throughline statement above** — they reflect the mid-2026 conversation
 - **Topic rotation (anti-repeat, Marvin 2026-06-22)** — the daily candidate pool was `sorted(topic_weights)`
   with the weights all tied at 1.0, so it scored the **same top compounds every day** → identical
   compound→pillar→template briefs morning after morning (only a hard TG REJECT broke the cycle). Now
-  `research.recently_used_compounds()` holds back any compound featured in the **last ~8 jobs** (cooldown,
-  `.env ENGINE_TOPIC_COOLDOWN_JOBS`) so the run rotates through the catalog, and `frame_for()` rotates the
-  per-pillar **hook** by day (`PILLAR_TOPIC_FRAMES`, 3 each) so framing isn't a fixed template. Applies to
-  both the image run (`cmd_topics`) and `reel-today`. ⚠️ Note `topic_weights` are still flat (the Stage-8
-  weighting that would auto-prioritise compounds from performance is deferred) — rotation is what currently
-  drives variety.
+  `research.products_in_last_days(7)` holds back any **product featured in the last 7 days** so the run
+  picks a fresh SKU related to the research (LRU fallback when the catalog is exhausted), and `frame_for()`
+  rotates the per-pillar **hook** by day (`PILLAR_TOPIC_FRAMES`, 3 each) so framing isn't a fixed template.
+  Applies to both the image run (`cmd_topics`) and `reel-today`. ⚠️ `topic_weights` are still flat (Stage-8
+  performance weighting deferred) — rotation is what drives variety today.
+- **Content duplication gate (`dedup.py`, Marvin 2026-06-22)** — the real anti-repeat. The daily flow is now
+  **fresh research → TEXT draft (`draft.md`) → compare to REJECTED + the last-7-day APPROVED/produced posts
+  → surgically revise only any near-duplicate PART (follow-ups/continuations PASS) → create content → TG →
+  schedule approved**. `dedup.recent_corpus(7)` builds the comparison set; `dedup.check_draft()` is one
+  OpenRouter call (fail-OPEN — a hiccup never blocks produce); a flagged hook/body/script is swapped back
+  in via `_apply_revisions_to_cp` / `_reel_dedup`, everything else untouched. Auto-revisions surface on the
+  TG card (`♻️ Dedup:`) and in `draft.md`. RED rewrites are dropped. Switch: `.env ENGINE_DEDUP=0`.
+- **Source Bank — Sunday bank-first + archive-on-use** — every banked source is mined into a backlog of
+  angles (`bank_source` → `propose_angles`, once per source) so the week's extractions fill the bank.
+  **Sundays** draw the day's topics from the bank first (`research.serve_bank_day`), external sweep only as
+  fallback. A used angle is **removed** from the pool and archived to `output/research/sources/_used.jsonl`
+  (`source_bank.mark_used`); a fully-spent source file is pruned — so nothing is ever served twice.
 - **Link-drops** — steer topics by dropping links.
 
 **Not wired (deferred on purpose):**
@@ -323,6 +352,12 @@ python3 research.py drops --max 1                   # consume next dropped link 
 python3 research.py inbox <URL>                     # manually clone one link now
 python3 research.py recopy output/jobs/ACME-NNN --note "…"   # re-make a revised image's copy
 python3 research.py reel-today                      # mint the day's reel brief (video days)
+
+# Dedup gate + Source Bank
+python3 dedup.py corpus [--days 7]                  # dump the last-7-day comparison corpus
+python3 dedup.py check output/jobs/ACME-NNN         # judge a job's draft vs recent posts (proof)
+python3 source_bank.py list                         # banked sources + unused-angle counts
+python3 source_bank.py angles <url|id> [--n 6]      # mine N reusable angles from a banked source
 
 # Review / publish
 python3 telegram.py push output/jobs/ACME-NNN       # push one post for review (--dry-run prints)

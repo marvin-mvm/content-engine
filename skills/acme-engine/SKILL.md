@@ -45,10 +45,17 @@ it never bypasses the Telegram gate. (v2 SOP Stage 4 / Task 25; see REFERENCE §
 ## What it does each day (PT, via launchd)
 | Time | Job | What happens |
 |---|---|---|
-| 05:30 | **produce** | research (topics + dropped links) → write 5 posts (1 per pillar) → render templates (0 credits) |
+| 05:30 | **produce** | fresh research (Sun = bank-first) → write a text draft → **de-duplicate it** vs the last 7 days → write 5 posts (1 per pillar) → render templates (0 credits) |
 | 07:00 | **review** | each post is pushed to the Telegram group for approval |
 | every 5 min | **approvals** | reads your Telegram replies (Approve/Reject/Revise) + captures dropped links |
 | 08/11/13/16/19 | **publish** | publishes each APPROVED post at its slot (dry-run until `output/GO_LIVE`) |
+
+**No more repeats (Marvin 2026-06-22).** Each post is drafted as text first, then checked against the
+**last 7 days** of approved + produced posts. A near-duplicate **hook/body/script** is auto-revised in
+place (a genuine **follow-up/continuation passes**); the TG card shows `♻️ Dedup:` when it does. Products
+rotate on a **7-day window** (no same SKU within a week), and **Sundays** pull from the internal research
+**bank** before searching externally. The duplication gate lives in `dedup.py` (`.env ENGINE_DEDUP=0` to
+disable). See [REFERENCE.md](REFERENCE.md) §9.
 
 ## The 5 pillars (one post each, every day)
 `08:00` **Science Simplified** · `11:00` **Stack of the Day** · `13:00` **Trending Hook** ·
@@ -58,7 +65,14 @@ Health, never targeted here. v2 = Labs-only.)
 
 ## Telegram (TG) — your 3 jobs
 1. **Approve / Reject / Revise** each post: reply `APPROVE ACME-021`, `REJECT ACME-021 reason`,
-   `REVISE ACME-021 your note`. REVISE re-makes the post from your note (images **and** reels).
+   `REVISE ACME-021 your note`. REVISE re-makes the post from your note (images **and** reels). Each
+   post arrives as ONE message (card = the image's caption) and the commands are **tap-to-copy** lines.
+   - **Reels/video = TWO approvals** (Marvin 2026-06-23): ① `APPROVE` the **concept card** (script +
+     prompts) — unlocks generation, spends nothing → ② the engine generates + pushes the finished
+     **video**, which you `APPROVE` again to **schedule it to Blotato** at its slot. A posting-APPROVE
+     is refused until the reel is actually rendered (closes the double-APPROVE hole). Images = ONE
+     approval. Topics rotate the **18 live compounds** (`PRODUCTS.md`); **Melanotan-2 & PT-141 never
+     appear in reels** (image/carousel only).
 2. **Drop links** for research: paste any IG/TikTok/YouTube/X/Reddit/FB/Threads link — it becomes the
    next **Trending** post. Works for **any** group member.
 3. **Alerts**: the engine messages you when something publishes or **fails** (failure alerts are live).

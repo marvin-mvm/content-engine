@@ -49,6 +49,9 @@ def main():
     e.write_status = lambda jid, s, **kw: status.__setitem__(jid, {"status": s, **kw})
     e.apply_trust_event = lambda *a, **k: trust_calls.append(a) or {"score": 999}
     e.record_decision = lambda *a, **k: None      # don't touch the real decision ledger in tests
+    # Reels now auto-slot on GATE-2 approval (2026-06-23); stub it so the test never writes the
+    # real manifest and stays focused on the gate's qc.json/status/trust behavior.
+    e.ensure_slotted_in_manifest = lambda *a, **k: "08:00"
     tg.send_text = lambda text, dry_run: True
 
     # 1 — concept APPROVE: concept_qc written, NO final qc, NO trust.
@@ -66,7 +69,18 @@ def main():
     check("concept_qc.json removed on reject", not (job / "concept_qc.json").exists())
     check("concept REJECT is trust-neutral (no credit was spent)", trust_calls == [])
 
-    # 3 — final gate untouched: a non-awaiting_concept job APPROVE hits the original path.
+    # 3 — GATE-2 guard (the double-APPROVE hole, Marvin 2026-06-23): a reel APPROVE is REFUSED
+    # unless the reel is generated (a render exists) AND at status=pushed. A 2nd APPROVE while
+    # concept_approved must NOT write the publish sign-off on an un-generated reel.
+    (job / "qc.json").unlink(missing_ok=True)
+    e.write_status(job_id, "concept_approved")
+    ap.apply_command("APPROVE", job_id, "", who="test", reply=False)
+    check("reel APPROVE w/o render is REFUSED (no qc.json)", not (job / "qc.json").exists())
+    check("refused APPROVE leaves status unchanged", status[job_id]["status"] == "concept_approved")
+    check("refused APPROVE is trust-neutral", trust_calls == [])
+
+    # 4 — final gate proper: a GENERATED reel (render present) at status=pushed APPROVES normally.
+    (job / f"{job_id}-final.mp4").write_text("render")
     e.write_status(job_id, "pushed")
     ap.apply_command("APPROVE", job_id, "", who="test", reply=False)
     check("final APPROVE -> status approved", status[job_id]["status"] == "approved")

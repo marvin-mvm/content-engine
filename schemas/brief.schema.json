@@ -68,6 +68,7 @@
     "class": { "type": "string" },
     "link": { "type": "string", "format": "uri", "description": "Owned-site product/COA destination for a LIVE SKU (e.g. https://acmelabs.co/shop/epithalon-20mg). The caption bridge folds this into every platform caption so the card's 'VIEW COA' CTA resolves to a real page. Absent for non-live compounds." },
     "product_feature": { "type": "boolean", "default": false },
+    "dedup_note": { "type": "string", "description": "Duplication-gate summary written when the content-dedup gate (dedup.py) auto-revised a near-duplicate part of this brief (hook/body/script/slide). METADATA ONLY — surfaced at review, never published." },
     "reference": {
       "type": "object",
       "description": "F3 provenance: the exact source that inspired this post + why it was selected. METADATA ONLY — F2 surfaces it at approval (\"Reference: <description> — <url>\"); it MUST NEVER appear in the published caption (F1 publish gate enforces this). Mode A (topic discovery) carries no url.",
