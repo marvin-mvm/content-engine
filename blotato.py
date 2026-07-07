@@ -370,6 +370,15 @@ TIKTOK_DEFAULTS = {
     "isAiGenerated": True,
 }
 
+YOUTUBE_DEFAULTS = {
+    "privacyStatus": "public",          # Blotato requires it on the youtube target
+    "shouldNotifySubscribers": False,   # don't ping subscribers on every research short
+}
+
+FACEBOOK_DEFAULTS = {
+    "pageId": "1095787500294673",       # Blotato requires pageId on the facebook target (Acme Labs page)
+}
+
 
 def cmd_publish(text, account_id, platform, media_urls, schedule, also, title,
                 privacy_level, dry_run, raw, api_key, also_media=None):
@@ -401,8 +410,14 @@ def cmd_publish(text, account_id, platform, media_urls, schedule, also, title,
             args.setdefault(k, v)
         if privacy_level:
             args["privacyLevel"] = privacy_level
-    if platform == "youtube" and title:
-        args["title"] = title
+    if platform == "youtube":
+        for k, v in YOUTUBE_DEFAULTS.items():
+            args.setdefault(k, v)
+        if title:
+            args["title"] = title
+    if platform == "facebook":
+        for k, v in FACEBOOK_DEFAULTS.items():
+            args.setdefault(k, v)
 
     if dry_run:                                     # show the exact payload, post NOTHING
         print(json.dumps(args, ensure_ascii=False, indent=2))

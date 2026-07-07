@@ -147,10 +147,11 @@ def build_x_thread(slides: list, brief: dict, link: str | None) -> dict | None:
             tweets.append(t)
     if not tweets:
         return None
-    reserve = (len(e.RUO_SENTENCE) + 2 if e.is_labs(brief) else 0) + (len(link) + 6 if link else 0)
+    # X = no COA link, no hashtags; last tweet ends body → WAITLIST CTA → RUO (disclaimer last; Marvin 2026-06-29).
+    reserve = (len(e.RUO_SENTENCE) + 2 if e.is_labs(brief) else 0) + (len(e.WAITLIST_CTA) + 2)
     last = fit_x(strip_hashtags(tweets[-1]), reserve=reserve)
-    last = e.ensure_link(last, link)
-    tweets[-1] = e.ensure_ruo(last, brief)
+    last = e.ensure_ruo(last, brief)
+    tweets[-1] = e.ensure_waitlist(last)
     return {"text": tweets[0], "thread": tweets[1:]}
 
 
@@ -249,18 +250,20 @@ def build_captions(job_dir: Path, force: bool = False) -> dict | None:
         text = (cp.get("caption") or "").strip()
         hashtags = cp.get("hashtags") or []
         if p == "x":
-            # X: 0 hashtags, <= 280 incl. the RUO line (Labs) AND the COA link. Reserve room
-            # for both, trim the body, then append link then RUO (RUO stays the last line).
+            # X: 0 hashtags, <= 280 incl. RUO (Labs) + the WAITLIST CTA. No COA link (Marvin
+            # 2026-06-28: dropped the "COA: <url>" line). Order: body → waitlist CTA → RUO (last).
             reserve = (len(e.RUO_SENTENCE) + 2) if e.is_labs(brief) else 0
-            if link:
-                reserve += len(link) + 6  # "\nCOA: " + url
+            reserve += len(e.WAITLIST_CTA) + 2
             text = fit_x(text, reserve=reserve)
-            text = e.ensure_link(text, link)
             text = e.ensure_ruo(text, brief)
+            text = e.ensure_waitlist(text)
         else:
-            text = append_hashtags(text, hashtags, HASHTAG_CAP.get(p, 0))
-            text = e.ensure_link(text, link)
+            # Footer order (Marvin 2026-06-29): body → HASHTAGS → waitlist CTA → RUO (disclaimer
+            # ALWAYS last). No COA link line. Append hashtags FIRST, then ensure_waitlist re-pins
+            # the CTA + RUO at the very end so the disclaimer stays the final line.
             text = e.ensure_ruo(text, brief)
+            text = append_hashtags(text, hashtags, HASHTAG_CAP.get(p, 0))
+            text = e.ensure_waitlist(text)
         # Pre-flight the publish gate's own checks so we surface problems at produce time.
         for hit in e.red_hits(text):
             fix = e.say_instead(hit)

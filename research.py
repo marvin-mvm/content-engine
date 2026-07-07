@@ -392,7 +392,7 @@ def plan_pillar_briefs(picks, *, spread, explicit_pillar=None):
 
 
 # Acme compound universe — SYNCED to the live store acmelabs.co/shop on 2026-06-23 by reading
-# the SPA's product bundle (the SOURCE OF TRUTH; PRODUCTS.md is reference-only and was stale). Only
+# the SPA's product bundle (the SOURCE OF TRUTH; docs/PRODUCTS.md is reference-only and was stale). Only
 # VISIBLE individual research compounds are listed (bundles/category pages/supplies excluded; HIDDEN
 # products like Epithalon are dropped). `sku` MUST equal the real shop slug — product_link() builds
 # SHOP_BASE + sku, so a wrong slug 404s the COA link. Drives product_tie scoring, brand routing, and
@@ -725,7 +725,7 @@ def product_link(compound, brand):
     """The canonical product/COA destination for a live SKU, or None.
 
     A post whose CTA says "VIEW COA" must point somewhere real — the live product page,
-    where the independent 3rd-party COA is attached (PRODUCTS.md). Only LIVE SKUs get a
+    where the independent 3rd-party COA is attached (docs/PRODUCTS.md). Only LIVE SKUs get a
     link; for non-live compounds we return None so we never promise a COA we can't show."""
     info = COMPOUND_CATALOG.get(compound or "", {})
     sku = info.get("sku")

@@ -3,12 +3,12 @@
 > **Lineage.** This is **Devon's Implementation Guide v1.0** (For: Marvin · June 2026) — its
 > *strategy* preserved in full, **reconfigured to the Acme / Claude-Code stack** we actually
 > run. Devon's strategy holds; his proposed plumbing (Creatomate, Trigger.dev) is dropped and
-> replaced with our tools. Source PDF: **[docs/Devon-Implementation-Guide-v1.0.pdf](docs/Devon-Implementation-Guide-v1.0.pdf)**
+> replaced with our tools. Source PDF: **[archive/Devon-Implementation-Guide-v1.0.pdf](archive/Devon-Implementation-Guide-v1.0.pdf)**
 > (the original 25-page doc, with all tables). §0 = exactly what changed.
 >
 > **Source-of-truth split:** brand hard-rules (palette, fonts, the verbatim IMAGE/VIDEO prompt
-> blocks, RUO, formats) → **[SOUL.md](SOUL.md)** (not duplicated here). Build status + sequencing
-> → **[MIGRATION.md](MIGRATION.md)**. Production/publish recipes → **[PIPELINE_RUNBOOK.md](PIPELINE_RUNBOOK.md)**.
+> blocks, RUO, formats) → **[SOUL.md](../SOUL.md)** (not duplicated here). Build status + sequencing
+> → **[MIGRATION.md](archive/MIGRATION.md)**. Production/publish recipes → **[PIPELINE_RUNBOOK.md](PIPELINE_RUNBOOK.md)**.
 > This file = the *strategy + operational* layer.
 >
 > **GOAL (Devon):** 100,000 organic followers across **Instagram + TikTok** in 6 months via a
@@ -317,7 +317,7 @@ separate from `content_drafts`. We may fold approval into `content_drafts.status
 
 **Our actual phase status:** A0 safety · A1 reel chain · A2 reel.py · A3 image/post.py · A4
 preflight · A5 first live-fire · A6 skills · **F1 publishing** — all ✅. **Next:** F3 research →
-F4 scheduling → F2 Telegram → F5 feedback → F6 cutover. (Full detail in [MIGRATION.md](MIGRATION.md).)
+F4 scheduling → F2 Telegram → F5 feedback → F6 cutover. (Full detail in [MIGRATION.md](archive/MIGRATION.md).)
 
 ---
 
@@ -351,7 +351,7 @@ composite 1–10 vs pillar benchmark.
 
 ## 9. Compliance — non-negotiable (hardcoded + manually checked)
 
-Full hard-rules in **[SOUL.md](SOUL.md) §12/§21**; `copywriter.py` + `publish.py` enforce them.
+Full hard-rules in **[SOUL.md](../SOUL.md) §12/§21**; `copywriter.py` + `publish.py` enforce them.
 
 **All content (Labs + Health):** never "treats / cures / heals / fixes / prevents / proven to /
 guaranteed"; educational framing only ("research suggests", "studies indicate", "protocols used

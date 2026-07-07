@@ -7,7 +7,7 @@
   "required": ["job_id", "type", "brand", "pillar", "persona", "topic"],
   "additionalProperties": false,
   "properties": {
-    "job_id": { "type": "string", "pattern": "^ACME-[0-9]{3,}$", "description": "Job folder id, e.g. ACME-007" },
+    "job_id": { "type": "string", "pattern": "^ACME-[0-9]{3,}[a-z]?$", "description": "Job folder id, e.g. ACME-007" },
     "type": { "enum": ["reel", "image"], "description": "reel = video caption chain (reel.py, A2); image = template render chain (post.py, A3)" },
     "brand": { "enum": ["labs", "health"], "description": "labs = RUO/organic-only; health = may run paid" },
     "pillar": { "enum": ["science", "stack", "trending", "proof", "founder"], "description": "Content pillar (Part 1A.2)" },

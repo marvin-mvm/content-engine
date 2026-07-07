@@ -2,7 +2,7 @@
 
 > **What this is:** the proven, repeatable recipe for turning an existing video into a
 > brand-compliant captioned reel, **plus every mistake we hit and how to avoid it.**
-> Brand hard-rules live in [SOUL.md](SOUL.md) and the captions design system in
+> Brand hard-rules live in [SOUL.md](../SOUL.md) and the captions design system in
 > [hyperframes-captions/design.md](hyperframes-captions/design.md) — this file does **not**
 > duplicate them, it documents the *process*.
 >
@@ -253,7 +253,7 @@ build copy and never edits the tracked template.
 
 > **What this is:** the image analogue of §1. Render any of the 5 brand template families
 > to a brand-correct PNG (or carousel slide set) at **0 Higgsfield credits**, then visually QC.
-> Proven Phase A3 across all families. Brand hard-rules stay in [SOUL.md](SOUL.md) §21.
+> Proven Phase A3 across all families. Brand hard-rules stay in [SOUL.md](../SOUL.md) §21.
 
 ### 9.0 Fast path — brief-driven, one command (`post.py`)
 
@@ -310,7 +310,7 @@ python3 produce.py templates/src/carousel-dark.html --no-log --carousel slides.j
 ### 9.3 M6 QC — same §5 checklist, image specifics
 
 Read every PNG (and `python3 -c "from PIL import Image; print(Image.open(p).size)"` the
-dimensions) against [SOUL.md](SOUL.md) §21: palette forest/cream/sage + one accent green ·
+dimensions) against [SOUL.md](../SOUL.md) §21: palette forest/cream/sage + one accent green ·
 brand bar + leaf badge present · DM Sans / Cormorant Garamond italic / DM Mono only · **RUO
 line + class/COA chips on Labs product posts** · correct aspect · legible · no banned claims.
 
@@ -397,6 +397,12 @@ python3 preflight.py --route video --model seedance_2_0 --aspect 9:16 --no-wait 
 > `publish.py`** with a hard pre-publish compliance gate (§11.5). §11.1–11.3 below document the
 > underlying `blotato.py` flow + the platform limits; §11.5 is the runner that drives it.
 
+> **UPDATE 2026-06-28 — first multi-platform live publish (ACME-071i, IG+FB+X+TikTok). The
+> authoritative per-platform format playbook + live account IDs now live in
+> [`skills/acme-blotato/SKILL.md`](skills/acme-blotato/SKILL.md).** Key facts that supersede older text below:
+> Instagram (`54946`) **and Facebook (`38021`, pageId `1095787500294673`) are now connected** (not "Instagram not connected"); live **TikTok = `47738`** (the "43061" in old docs was a view count).
+> Carousels go out in a **different aspect per platform** — IG 4:5 (`carousel-*.html`), **X = square 1080×1080** (`carousel-light-square.html`, slide-per-tweet thread, 0 hashtags), **TikTok = vertical 9:16** (`carousel-light-vertical.html`, photo carousel). **FB multi-photo is an ALBUM, not a swipe carousel** (organic FB has no carousel — ads-only). FB publish **needs a flat `pageId`** in `create_post`. IG caps at **5 hashtags**. **Every caption carries the waitlist CTA** (`engine.ensure_waitlist`). API-published posts don't appear in the Blotato dashboard.
+
 ### 11.1 The flow that works
 
 ```
@@ -411,11 +417,12 @@ job folder PNGs  →  blotato.py upload <file>  →  public URL  →  blotato.py
    # X (Twitter) — single opinion tweet, cover image, 0 hashtags:
    python3 blotato.py publish "<≤280-char opinion>" --account-id 18688 --platform twitter --media-url <coverURL>
    # TikTok — photo carousel, scheduled, public, AI-flagged (defaults applied automatically):
-   python3 blotato.py publish "<caption + 3–5 hashtags>" --account-id 43061 --platform tiktok \
+   python3 blotato.py publish "<caption + 3–5 hashtags>" --account-id 47738 --platform tiktok \
      --media-url <s1> --media-url <s2> ... --media-url <s5> --schedule 2026-06-17T20:53:39Z
    ```
-   Connected accounts: **TikTok 43061 · X/Twitter 18688 · YouTube 37252** (`@acmelabs`). Instagram
-   NOT connected yet (Operator's manual Blotato step). Get current IDs: `blotato.py accounts`.
+   Connected accounts (verified 2026-06-28): **IG 54946 · FB 38021 (pageId 1095787500294673) ·
+   X 18688 · TikTok 47738 · YouTube 37252** (`@acmelabs`; YT manual). Threads not connected.
+   Get current IDs: `blotato.py accounts`.
 
 ### 11.2 `blotato.py` changes made in F1 (backward-compatible; OpenClaw still works)
 
@@ -492,8 +499,8 @@ or an **object** `{text, thread[], title}`. X carries its thread in `thread[]` (
 | Media | each file exists + aspect matches (carousel 4:5 · callout 1:1 · compound 4:5 · reel 9:16) |
 | X shape | each X post (main + each thread post) ≤280 chars **and** 0 hashtags (§1A.4) — decided hard-block 2026-06-17 |
 
-**Routing:** X→twitter `18688` · tiktok `43061` · youtube `37252`. Instagram/Threads/Facebook =
-**skipped with a warning** (not connected). YouTube = **skipped for image jobs** (video only, P2).
+**Routing:** X→twitter `18688` · tiktok `47738` · instagram `54946` · facebook `38021` (pageId
+`1095787500294673`) · youtube `37252`. Threads = **skipped with a warning** (not connected). YouTube = **skipped for image jobs** (video only, P2).
 **X carousel → slide-per-tweet THREAD** (each slide = one tweet, image on each — the guide's
 treatment); a single-image X job posts up to 4 images in one tweet. TikTok/IG get the **full carousel**.
 

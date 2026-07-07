@@ -37,8 +37,15 @@ import telegram as tg
 API = "https://api.telegram.org/bot{token}/{method}"
 OFFSET_FILE = e.ENGINE_DIR / "approvals_offset.json"
 
-# Tolerate leading emoji/whitespace (✅ APPROVE …) then VERB ACME-NNN [note].
-CMD_RE = re.compile(r"(APPROVE|REJECT|REVISE|HOLD)\s+(ACME-\d+)\s*([^\n]*)", re.IGNORECASE)
+# Tolerate leading emoji/whitespace (✅ APPROVE …) then VERB ACME-NNN[i] [note].
+# The optional trailing letter (e.g. ACME-070i) marks an IG-link-drop job (Marvin 2026-06-24).
+CMD_RE = re.compile(r"(APPROVE|REJECT|REVISE|HOLD)\s+(ACME-\d+[a-z]?)\s*([^\n]*)", re.IGNORECASE)
+
+
+def _norm_jobid(s: str) -> str:
+    """Normalize a matched job id: uppercase the ACME-NNN stem but keep a trailing
+    letter suffix lowercase (folders are ACME-070i, not ACME-070I)."""
+    return re.sub(r"([A-Za-z])$", lambda m: m.group(1).lower(), s.upper())
 
 
 # ── trust helpers ────────────────────────────────────────────────────────────
@@ -252,7 +259,7 @@ def cmd_poll(args):
                     tg.send_text(f"📥 Queued {len(added)} link(s) ({plats}) for the Trending pillar "
                                  f"— scored in the next morning run.", dry_run=False)
             continue
-        apply_command(m.group(1), m.group(2).upper(), m.group(3), who=who,
+        apply_command(m.group(1), _norm_jobid(m.group(2)), m.group(3), who=who,
                       reply=not args.no_reply)
         applied += 1
     if updates:
@@ -265,7 +272,7 @@ def cmd_apply(args):
     m = CMD_RE.search(args.command)
     if not m:
         sys.exit("could not parse a command — expected e.g. 'APPROVE ACME-015 [note]'")
-    apply_command(m.group(1), m.group(2).upper(), m.group(3), who=args.who,
+    apply_command(m.group(1), _norm_jobid(m.group(2)), m.group(3), who=args.who,
                   reply=not args.no_reply)
 
 

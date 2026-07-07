@@ -76,7 +76,10 @@ CINEMATIC_SUFFIX_IMAGE = (
 )
 
 # These models reject --aspect-ratio flag; bake aspect into the prompt instead.
-MODELS_NO_ASPECT_FLAG = {"kling3_0", "seedance_2_0"}
+MODELS_NO_ASPECT_FLAG = {"kling3_0", "seedance_2_0",
+                         # Nano Banana family (Gemini image) takes aspect in the prompt, not a flag.
+                         "nano_banana", "nano_banana_flash", "nano_banana_2",
+                         "nano_banana_2_ai_stylist", "nano_banana_2_skin_enhancer", "nano_banana_2_shots"}
 
 
 def run(cmd, capture=True, check=True):

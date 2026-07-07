@@ -218,6 +218,8 @@ def build_concept_card(job_dir: Path) -> str:
         script_text = script_text[:597].rstrip() + "…"
     est = beats.get("est_seconds")
     lines = [
+        "⚠️ *Video not generated yet* (for approval — script & concept only)",
+        "",
         f"🎬 *{job_id}* · CONCEPT REVIEW (reel) · {brief.get('pillar', '?').title()} · Acme {brief.get('brand', '?').title()}",
         f"🎯 Hook: {beats.get('hook') or cover_hook or '—'}",
         "",

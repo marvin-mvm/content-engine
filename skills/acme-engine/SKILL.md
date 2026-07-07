@@ -71,7 +71,7 @@ Health, never targeted here. v2 = Labs-only.)
      prompts) — unlocks generation, spends nothing → ② the engine generates + pushes the finished
      **video**, which you `APPROVE` again to **schedule it to Blotato** at its slot. A posting-APPROVE
      is refused until the reel is actually rendered (closes the double-APPROVE hole). Images = ONE
-     approval. Topics rotate the **18 live compounds** (`PRODUCTS.md`); **Melanotan-2 & PT-141 never
+     approval. Topics rotate the **18 live compounds** (`docs/PRODUCTS.md`); **Melanotan-2 & PT-141 never
      appear in reels** (image/carousel only).
 2. **Drop links** for research: paste any IG/TikTok/YouTube/X/Reddit/FB/Threads link — it becomes the
    next **Trending** post. Works for **any** group member.

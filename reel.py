@@ -101,12 +101,13 @@ def run_overlay_reel(job, brief, overlay):
 
     final = job / f"{brief['job_id']}-final.mp4"
     cmd = ["python3", PRODUCE, template, str(final), "--video-underlay", str(video_src), "--no-log"]
-    # reel-overlay templates CONTAIN the video in a design window (top:20% left:18% right:18%
-    # bottom:20% of 1080×1920 = 692×1152 at 194,384); the caption sits OUTSIDE that box. Place
-    # the clean video into the window; the band colour follows the theme.
+    # reel-overlay templates CONTAIN the video in a design window (top:25% left:18% right:18%
+    # bottom:20% of 1080×1920 = 692×1056 at 194,480); the caption sits OUTSIDE that box. The
+    # window starts at 25% (was 20%) so a long 3-line hook clears the video top instead of
+    # overlapping it (Marvin 2026-06-25, ACME-107i). MUST stay in sync with .window CSS top:25%.
     if "reel-overlay" in template:
         is_light = template.endswith("-light.html")
-        cmd += ["--window", "194,384,692,1152", "--band", "#F2EDE4" if is_light else "#1A2E1E"]
+        cmd += ["--window", "194,480,692,1056", "--band", "#F2EDE4" if is_light else "#1A2E1E"]
     # Synced spoken captions: overlay the script, timed to the narration (voiceover) length.
     script = brief.get("script", "").strip()
     narr = job / "narration.wav"

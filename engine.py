@@ -671,6 +671,38 @@ def ensure_link(text: str, link: str | None) -> str:
     return (text.rstrip() + f"\nCOA: {link}") if text else f"COA: {link}"
 
 
+# Pre-launch WAITLIST CTA — folded into EVERY caption so we're building the list on every post
+# (Marvin 2026-06-28: "we missed putting acmelabs.co/waitlist on every post"). The primary CTA
+# until launch; idempotent so it never double-appends.
+WAITLIST_LINK = "acmelabs.co/waitlist"
+WAITLIST_CTA = f"Join the waitlist → {WAITLIST_LINK}"
+
+# Canonical caption TAIL ORDER (Marvin 2026-06-29): the CTA line always comes FIRST,
+# the RUO disclaimer is ALWAYS the very last line. Never the other way around.
+RUO_DISCLAIMER = "For research use only — not for human consumption."
+_RUO_LINE_RE = re.compile(r"\n*[ \t]*for research use only[^\n]*", re.IGNORECASE)
+
+
+def ensure_waitlist(text: str) -> str:
+    """Guarantee the pre-launch waitlist CTA rides the caption AND enforce the canonical
+    tail order: body → waitlist CTA → RUO disclaimer (ALWAYS last). Idempotent.
+
+    Pulls any existing CTA / RUO line out of wherever they sit and re-pins them in order,
+    so a caption authored with the disclaimer above the CTA gets corrected automatically.
+    Only re-adds the RUO line if it was already present (don't force it onto non-Labs copy)."""
+    text = text or ""
+    had_ruo = bool(_RUO_LINE_RE.search(text))
+    body = _RUO_LINE_RE.sub("", text).rstrip()
+    # drop any existing waitlist CTA line(s) so we can re-pin a single one
+    body = "\n".join(ln for ln in body.split("\n") if WAITLIST_LINK not in ln).rstrip()
+    # collapse any blank-line gap left behind (e.g. a CTA removed from mid-caption)
+    body = re.sub(r"\n{3,}", "\n\n", body)
+    out = (body + f"\n\n{WAITLIST_CTA}") if body else WAITLIST_CTA
+    if had_ruo:
+        out = out + f"\n\n{RUO_DISCLAIMER}"
+    return out.strip()
+
+
 if __name__ == "__main__":          # tiny status dump for humans / launchd logs
     import argparse
     ap = argparse.ArgumentParser(description="Acme engine core — status/budget inspector")

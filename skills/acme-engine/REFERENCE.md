@@ -151,7 +151,7 @@ education; premium biotech, not spa-wellness; confident not clinical.
 All verified rendering (dark+light) at 0 credits. The image brief points `post.py` at the template via
 `brief.image.template` (+ `carousel: slides.json` for decks).
 
-**⛔ Guardrails (Marvin 2026-06-22, ACME-052..061 batch — see TEMPLATES.md "Rendering guardrails"):**
+**⛔ Guardrails (Marvin 2026-06-22, ACME-052..061 batch — see docs/TEMPLATES.md "Rendering guardrails"):**
 - Auto-route only to templates the copywriter FILLS: **story-reel** (short hook), **carousel** (any length,
   robust), **static-compound** (most robust). **Never `story-poll-pro`** (hardcoded comparison body) and
   feed **static-callout** only a short STAT. Comparison/this-or-that/poll formats → **carousel deck**.

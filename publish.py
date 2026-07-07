@@ -41,9 +41,10 @@ ANY failed check -> reasons to stderr, exit 1, publish NOTHING:
   - X caption shape   each X post (main + thread) <=280 chars and 0 hashtags (§1A.4)
   - Caption present   every active target has a caption in captions.json
 
-Connected Blotato accounts (RUNBOOK §11): X/twitter 18688 · tiktok 43061 · youtube 37252.
-instagram/threads/facebook are NOT connected yet -> skipped with a warning (Operator's manual
-Blotato step). YouTube takes video only (P2) -> skipped for image jobs.
+Connected Blotato accounts (RUNBOOK §11, verified 2026-06-28): X/twitter 18688 ·
+tiktok 47738 · instagram 54946 · facebook 38021 (needs pageId) · youtube 37252.
+Only threads is NOT connected -> skipped with a warning. YouTube takes video only
+(P2) -> skipped for image jobs.
 
 Supabase published_posts is F-series; for now successes are recorded to
 <job>/published_posts.json (accumulates across --go runs).
@@ -66,11 +67,11 @@ BLOTATO = str(WORKSPACE / "blotato.py")
 ACCOUNTS = {
     "x":         {"blotato": "twitter",   "account_id": "18688", "connected": True},
     "twitter":   {"blotato": "twitter",   "account_id": "18688", "connected": True},
-    "tiktok":    {"blotato": "tiktok",    "account_id": "43061", "connected": True},
+    "tiktok":    {"blotato": "tiktok",    "account_id": "47738", "connected": True},
     "youtube":   {"blotato": "youtube",   "account_id": "37252", "connected": True, "video_only": True},
-    "instagram": {"blotato": "instagram", "account_id": None,    "connected": False},
+    "instagram": {"blotato": "instagram", "account_id": "54946", "connected": True},
     "threads":   {"blotato": "threads",   "account_id": None,    "connected": False},
-    "facebook":  {"blotato": "facebook",  "account_id": None,    "connected": False},
+    "facebook":  {"blotato": "facebook",  "account_id": "38021", "connected": True},
 }
 
 # Aspect ratios as width/height (gate: rendered media must match the template family).
@@ -80,6 +81,7 @@ ASPECT_TOL = 0.02  # ~2% — covers rounding (1080x1350 = 0.8 exactly, but stay 
 # Template family -> required aspect (mirrors preflight.TEMPLATE_ASPECT / RUNBOOK §9.2).
 TEMPLATE_ASPECT = [
     (re.compile(r"story-(reel|poll)"), "9:16"),
+    (re.compile(r"carousel-\w+-square"), "1:1"),   # square carousels (X requires 1:1) — must precede generic carousel
     (re.compile(r"carousel"), "4:5"),
     (re.compile(r"static-compound"), "4:5"),
     (re.compile(r"static-callout"), "1:1"),
@@ -122,6 +124,8 @@ def caption_for(captions: dict, platform: str):
     v = captions.get(platform)
     if v is None and platform in ("x", "twitter"):
         v = captions.get("twitter") if platform == "x" else captions.get("x")
+    if v is None and platform == "facebook":
+        v = captions.get("instagram")          # FB reuses the IG long-form caption
     if v is None:
         return None
     if isinstance(v, str):

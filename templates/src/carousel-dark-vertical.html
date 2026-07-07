@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1080, height=1920" />
+  <title>Acme — Carousel Slide (Dark, 1080×1920 vertical / TikTok)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600;1,700&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 1080px; height: 1920px; overflow: hidden; }
+  </style>
+</head>
+<body>
+<div style="position: relative; width: 1080px; height: 1920px; background: #1A2E1E; overflow: hidden; font-family: 'DM Sans', sans-serif; color: #F2EDE4;">
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: radial-gradient(ellipse 95% 60% at 50% 42%, #243a28 0%, #1A2E1E 62%, #0F1A0F 100%);"></div>
+
+  <div style="position: absolute; top: 96px; left: 84px;">
+    <span style="font-family: 'DM Mono', monospace; font-size: 28px; letter-spacing: 0.1em; color: #3D9E6E;">{{SLIDE_NUM}} / {{SLIDE_TOTAL}}</span>
+    <div aria-hidden="true" style="margin-top: 10px; width: 46px; height: 3px; background: #3D9E6E;"></div>
+  </div>
+
+  <div style="position: absolute; top: 90px; right: 84px; display: flex; align-items: center; gap: 16px;">
+    <span style="font-family: 'DM Mono', monospace; font-size: 18px; letter-spacing: 0.14em; color: #F2EDE4; text-transform: uppercase;">{{BRAND_NAME}}</span>
+    <div style="width: 70px; height: 70px; border: 2px solid #3D9E6E; border-radius: 14px; background: rgba(26, 46, 30, 0.85); display: flex; align-items: center; justify-content: center;">
+      <img src="../../assets/acme-logo-icon.svg" alt="Acme" style="width: 44px; height: 44px; object-fit: contain;" />
+    </div>
+  </div>
+
+  <div style="position: absolute; top: 260px; left: 84px; right: 84px; bottom: 300px; display: flex; flex-direction: column; justify-content: center; overflow: hidden;">
+    <div style="font-family: 'DM Mono', monospace; font-size: 26px; letter-spacing: 0.24em; color: #3D9E6E; text-transform: uppercase;">{{EYEBROW}}</div>
+    <h1 style="margin: 26px 0 0 0; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 88px; line-height: 1.07; letter-spacing: -0.02em; color: #F2EDE4;">
+      <span style="display: block;">{{HEAD_1}}</span>
+      <span style="display: block; font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 700; color: #3D9E6E; font-size: 98px;">{{HEAD_2_ITALIC}}</span>
+      <span style="display: block;">{{HEAD_3}}</span>
+    </h1>
+    <div aria-hidden="true" style="margin: 36px 0; height: 1px; background: rgba(61,158,110,0.25);"></div>
+    <div style="font-family: 'DM Sans', sans-serif; font-weight: 400; font-size: 44px; line-height: 1.5; color: #EDE8DF;">{{BODY}}</div>
+  </div>
+
+  <div aria-hidden="true" style="position: absolute; bottom: 0; left: 0; right: 0; height: 260px; background: linear-gradient(to top, rgba(10, 20, 12, 0.9) 0%, transparent 100%); pointer-events: none;"></div>
+
+  <div style="position: absolute; bottom: 120px; left: 84px; right: 84px; display: flex; align-items: center; justify-content: space-between;">
+    <span style="font-family: 'DM Mono', monospace; font-size: 24px; letter-spacing: 0.14em; color: #6B8F7A; text-transform: uppercase;">{{SWIPE_LABEL}}</span>
+    <span style="font-family: 'DM Mono', monospace; font-size: 24px; letter-spacing: 0.18em; color: #7BA086;">{{HANDLE}}</span>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1080, height=1350" />
+  <title>Acme — Product-Use Dark (1080×1350)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600;1,700&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>* { box-sizing: border-box; margin: 0; padding: 0; } body { width: 1080px; height: 1350px; overflow: hidden; }</style>
+</head>
+<body>
+<div style="position: relative; width: 1080px; height: 1350px; background: #1A2E1E; overflow: hidden; font-family: 'DM Sans', sans-serif; color: #F2EDE4; display: flex; flex-direction: column;">
+  <!-- vignette -->
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: radial-gradient(ellipse 75% 60% at 50% 42%, #243a28 0%, #1A2E1E 62%, #0F1A0F 100%);"></div>
+
+  <!-- header -->
+  <div style="position: relative; display: flex; align-items: center; justify-content: space-between; padding: 46px 60px 0;">
+    <span style="font-family: 'DM Mono', monospace; font-size: 20px; letter-spacing: 0.2em; color: #7BA086; text-transform: uppercase;">{{BRAND_NAME}}</span>
+    <div style="width: 64px; height: 64px; border: 2px solid #3D9E6E; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: rgba(26,46,30,0.85);">
+      <img src="../../assets/acme-logo-icon.svg" alt="Acme" style="width: 40px; height: 40px; object-fit: contain;" />
+    </div>
+  </div>
+
+  <!-- eyebrow + compound -->
+  <div style="position: relative; text-align: center; margin-top: 22px;">
+    <div style="font-family: 'DM Mono', monospace; font-size: 22px; letter-spacing: 0.26em; color: #3D9E6E; text-transform: uppercase;">{{EYEBROW}}</div>
+    <div style="font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 62px; letter-spacing: -0.02em; color: #F2EDE4; margin-top: 8px;">{{COMPOUND}}</div>
+  </div>
+
+  <!-- centered product image -->
+  <div style="position: relative; flex: 1; display: flex; align-items: center; justify-content: center; padding: 10px 0;">
+    <img src="{{PRODUCT_IMAGE}}" alt="" style="max-height: 440px; max-width: 66%; object-fit: contain; filter: drop-shadow(0 26px 54px rgba(0,0,0,0.5));" />
+  </div>
+
+  <!-- description BELOW the image -->
+  <div style="position: relative; text-align: center; padding: 0 96px;">
+    <div style="font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 700; font-size: 46px; color: #6FCF97; line-height: 1.2;">{{DESCRIPTOR}}</div>
+    <div style="font-family: 'DM Sans', sans-serif; font-weight: 400; font-size: 31px; color: #DCE6D7; line-height: 1.42; margin-top: 18px;">{{DESCRIPTION}}</div>
+  </div>
+
+  <!-- spec chips -->
+  <div style="position: relative; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; padding: 26px 60px 0;">
+    <span style="background: rgba(61,158,110,0.18); border: 1px solid rgba(111,207,151,0.4); border-radius: 30px; padding: 11px 26px; font-family: 'DM Mono', monospace; font-size: 21px; letter-spacing: 0.06em; color: #9FE3B8;">{{SPEC1}}</span>
+    <span style="background: rgba(61,158,110,0.18); border: 1px solid rgba(111,207,151,0.4); border-radius: 30px; padding: 11px 26px; font-family: 'DM Mono', monospace; font-size: 21px; letter-spacing: 0.06em; color: #9FE3B8;">{{SPEC2}}</span>
+  </div>
+
+  <!-- footer -->
+  <div style="position: relative; display: flex; align-items: center; justify-content: space-between; padding: 28px 60px 42px;">
+    <span style="font-family: 'DM Mono', monospace; font-size: 18px; letter-spacing: 0.1em; color: #7BA086;">{{RUO_LINE}}</span>
+    <span style="font-family: 'DM Mono', monospace; font-size: 20px; letter-spacing: 0.18em; color: #9FE3B8;">{{HANDLE}}</span>
+  </div>
+</div>
+</body>
+</html>

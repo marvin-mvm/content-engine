@@ -8,7 +8,7 @@
   "additionalProperties": false,
   "properties": {
     "at": { "type": "string", "format": "date-time", "description": "UTC ISO8601 (Z). Postgres: timestamptz, decided_at." },
-    "job_id": { "type": "string", "pattern": "^ACME-[0-9]{3,}$", "description": "FK -> the job; Postgres: text, indexed." },
+    "job_id": { "type": "string", "pattern": "^ACME-[0-9]{3,}[a-z]?$", "description": "FK -> the job; Postgres: text, indexed." },
     "verb": { "enum": ["approve", "revise", "reject", "hold"], "description": "The human decision. reject/revise are the negative signals the feedback loop steers away from." },
     "gate": { "enum": ["concept", "final"], "description": "concept = F7 reel pre-credit script/concept gate; final = the publish sign-off gate." },
     "who": { "type": "string", "description": "Telegram username / attribution of the reviewer." },

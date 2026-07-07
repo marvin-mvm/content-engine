@@ -83,7 +83,16 @@ _DEPLETION_PHRASES = (
     "credits remaining: 0", "out of quota", "quota exceeded", "quota has been",
     "exceeded your", "usage limit", "limit exceeded", "monthly usage", "monthly limit",
     "rate limit", "too many requests", "payment required", "upgrade your plan",
-    "billing", "depleted", "subscription", "plan limit",
+    "billing issue", "billing problem", "payment failed", "payment declined",
+    "depleted", "subscription expired", "subscription required", "plan limit",
+)
+# TRANSIENT throttling (concurrency caps / slow-down) is NOT depletion — the engine should
+# retry, not declare the API down. Higgsfield's 8-concurrent-job cap returns a rate_limit_reached
+# body that ALSO carries "billing_period":"monthly", which used to false-match the old bare
+# "billing" phrase and fire a bogus depletion alert (Marvin 2026-06-25). Checked FIRST in classify.
+_TRANSIENT_PHRASES = (
+    "concurrent_jobs_limit", "rate_limit_reached", "too many concurrent",
+    "concurrent request", "slow down", "try again later", "please retry",
 )
 _DEPLETION_CODES = {402, 429}              # Payment Required / Too Many Requests (quota)
 _CODE_IN_TEXT = re.compile(r"\b(402|429)\b")
@@ -100,12 +109,16 @@ def _norm(tool: str) -> str:
 def classify(code=None, body: str = "") -> bool:
     """True iff this failure looks like quota/credit/payment depletion (vs transient/other).
     Caller passes the HTTP status (best) and/or the raw error body text."""
+    blob = (body or "").lower()
+    # Transient throttling first: a concurrency/slow-down signature is a retry, not depletion —
+    # even if the HTTP code is 429 (rate limits use 429) or the body carries billing metadata.
+    if any(p in blob for p in _TRANSIENT_PHRASES):
+        return False
     try:
         if code is not None and int(code) in _DEPLETION_CODES:
             return True
     except (TypeError, ValueError):
         pass
-    blob = (body or "").lower()
     if any(p in blob for p in _DEPLETION_PHRASES):
         return True
     # The tools embed the HTTP code in their ERROR string ("ERROR: SearchAPI 429: ..."),

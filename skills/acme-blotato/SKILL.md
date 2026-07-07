@@ -13,76 +13,47 @@ metadata:
 
 # acme-blotato
 
-## Connected Accounts
+**Before any real publish, read [REFERENCE.md](REFERENCE.md)** — per-platform aspects/formats
+(single vs carousel), the IG-rejects-PNG gotcha, FB `pageId` call shape, X thread wiring,
+TikTok loop-video recipe, upload hangs, and Blotato visual generation all live there.
 
-| Platform | Account ID |
-|----------|-----------|
-| TikTok   | `43061`   |
-| Twitter  | `18688`   |
-| YouTube  | `37252`   |
+## Connected Accounts (live, verified 2026-06-28)
 
-Instagram not connected. Full platform list: `instagram, tiktok, linkedin, twitter, facebook, youtube, threads, bluesky, pinterest`
+| Platform | Account ID | Handle |
+|----------|-----------|--------|
+| Instagram | `54946` | @acmelabs |
+| Facebook  | `38021` | Acme Labs page (subaccount/pageId `1095787500294673`) |
+| X/Twitter | `18688` | @acmelabs |
+| TikTok    | `47738` | @acme.labs |
+| YouTube   | `37252` | — (Marvin posts YT **manually** via community post) |
+
+> `acme-blotato accounts` is authoritative. Older docs/SOUL say "TikTok 43061" — that was a **view count**, not an ID; the live TikTok account is **47738**.
+
+## Core commands
 
 ```bash
 acme-blotato accounts                 # verify live connections + IDs
-```
 
-## Publish a Post
-
-```bash
-# Single media — post immediately
-acme-blotato publish "caption text" --account-id 43061 --platform tiktok --media-url URL
-
-# Single media — scheduled
-acme-blotato publish "caption text" --account-id 18688 --platform twitter --media-url URL \
+# Publish (omit --schedule to post now; ISO 8601 UTC to schedule)
+acme-blotato publish "caption" --account-id 18688 --platform twitter --media-url URL \
   --schedule 2026-05-30T14:00:00Z
-
-# Carousel — repeat --media-url for each slide
-acme-blotato publish "caption text" --account-id 43061 --platform tiktok \
+# Carousel: repeat --media-url per slide. Text-only: omit --media-url.
+acme-blotato publish "caption" --account-id 47738 --platform tiktok \
   --media-url URL1 --media-url URL2 --media-url URL3
 
-# No media (text-only)
-acme-blotato publish "caption text" --account-id 18688 --platform twitter
+acme-blotato schedules                # list pending scheduled posts
+acme-blotato post-status POST_ID      # confirm a post published
 ```
 
-**Schedule format:** ISO 8601 UTC — `2026-05-30T14:00:00Z`. Omit `--schedule` to post immediately.
+**Output:** `{"id": "POST_ID", "status": "scheduled|published", ...}` — but API-published posts
+do **NOT** appear in the Blotato dashboard; verify on the actual profile.
 
-**Output:** `{"id": "POST_ID", "status": "scheduled|published", "platform": "tiktok", "scheduled_for": "..."}`
+## Hard rules (full detail in REFERENCE.md)
 
-**Carousel warning:** Blotato carousel templates sometimes add AI text artifacts on lower slides. Inspect before sending. Use tweet-card template instead if illegible.
-
-```bash
-acme-blotato schedules                # list all pending scheduled posts
-acme-blotato post-status POST_ID      # check if a post was published successfully
-```
-
-## Visual Generation (Blotato Templates)
-
-Use only on commander request or when Higgsfield is unavailable. Higgsfield is always the primary media engine.
-
-```bash
-# Step 1 — discover template IDs
-acme-blotato templates                             # list all templates
-acme-blotato templates --search "carousel"         # filter: carousel, quote, slideshow, video, infographic
-```
-
-```bash
-# Step 2 — generate from a template ID (blocks-and-waits, ~2–4 min)
-acme-blotato generate TEMPLATE_ID "prompt describing content" --title "Optional title"
-```
-
-**Output:** `{"id": "VISUAL_ID", "status": "completed", "url": "https://...", "type": "carousel|image|..."}`
-Use the returned `url` as `--media-url` in publish.
-
-Never retry `generate` more than 2x.
-
-## Extract Transcript / Source Content — ⚠️ DEPRECATED
-
-**Do not use `acme-blotato source` for extraction.** The engine routes all "read-the-link" work to
-dedicated extractors and Blotato is publish/schedule + backup images only:
-
-- Article / blog / website → **`acme-firecrawl scrape "URL"`** (faithful full markdown)
-- Social / video (YouTube, Instagram, TikTok, Facebook, Threads, X/Twitter) → **`acme-apify scrape "URL"`**
-
-The `source` subcommand still exists for ad-hoc manual use, but it returns a capped AI *summary*
-(≤3000 chars), not the real page, and is no longer invoked by any pipeline path.
+- **Caption tail order (Marvin 2026-06-29):** `…body… → waitlist CTA → RUO disclaimer LAST` —
+  enforced by `engine.ensure_waitlist()`; run every caption through it.
+- **Can't edit or delete a published post** via Blotato → always `--dry-run` + eyeball payload first.
+- Each platform needs its own aspect/format — never reuse one render everywhere.
+- **Extraction is NOT this skill:** articles → `acme-firecrawl scrape`, socials → `acme-apify scrape`.
+  (`acme-blotato source` is deprecated — capped AI summary, no pipeline path uses it.)
+- Blotato visual generation = backup only (Higgsfield is primary); never retry `generate` more than 2×.

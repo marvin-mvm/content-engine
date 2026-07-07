@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1080, height=1080" />
+  <title>Acme — Story / Reel Light (1080×1080 square)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600;1,700&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 1080px; height: 1080px; overflow: hidden; }
+  </style>
+</head>
+<body>
+
+<div style="position: relative; width: 1080px; height: 1080px; background: #F2EDE4; overflow: hidden; font-family: 'DM Sans', sans-serif; color: #1A2820;">
+
+  <!-- Radial vignette (cream → sage mint) -->
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: radial-gradient(ellipse 80% 75% at 50% 42%, #F2EDE4 0%, #DCE6D7 60%, #C8DDD0 100%);"></div>
+
+  <!-- Centered flow column -->
+  <div style="position: absolute; inset: 0; padding: 74px 96px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+
+    <!-- Logo badge -->
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 30px;">
+      <div style="width: 92px; height: 92px; border: 2px solid #3D9E6E; border-radius: 16px; background: rgba(242, 237, 228, 0.85); display: flex; align-items: center; justify-content: center;">
+        <img src="../../assets/acme-logo-icon.svg" alt="Acme" style="width: 58px; height: 58px; object-fit: contain;" />
+      </div>
+      <span style="font-family: 'DM Mono', monospace; font-size: 15px; letter-spacing: 0.18em; color: #1A2820; text-transform: uppercase;">{{BRAND_NAME}}</span>
+    </div>
+
+    <!-- Eyebrow -->
+    <div style="font-family: 'DM Mono', monospace; font-size: 22px; letter-spacing: 0.28em; color: #3D9E6E; text-transform: uppercase; margin-bottom: 24px;">{{EYEBROW}}</div>
+
+    <!-- Headline -->
+    <h1 style="margin: 0; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 74px; line-height: 1.08; letter-spacing: -0.02em; color: #1A2820;">
+      <span style="display: block;">{{HOOK_LINE_1}}</span>
+      <span style="display: block; font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 700; color: #3D9E6E; font-size: 82px; letter-spacing: -0.01em;">{{HOOK_LINE_2_ITALIC}}</span>
+      <span style="display: block;">{{HOOK_LINE_3}}</span>
+    </h1>
+
+    <!-- Subtitle pill -->
+    <div style="margin-top: 38px; background: rgba(242, 237, 228, 0.85); border-radius: 18px; padding: 20px 36px; font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 40px; color: #1A2820; line-height: 1.3; border: 1px solid rgba(45, 106, 74, 0.22);">{{SUBTITLE_TEXT}}</div>
+
+    <!-- CTA + handle -->
+    <div style="margin-top: 42px; display: flex; flex-direction: column; align-items: center; gap: 16px;">
+      <div style="background: #2D6A4A; border-radius: 40px; padding: 18px 42px; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 28px; color: #F2EDE4; letter-spacing: 0.04em;">{{CTA_LABEL}} →</div>
+      <span style="font-family: 'DM Mono', monospace; font-size: 22px; letter-spacing: 0.18em; color: #6B8F7A;">{{HANDLE}}</span>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

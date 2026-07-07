@@ -3,7 +3,7 @@
 > **Source of the new templates:** `assets/Acme Labs Post Overlay Templates/` (10 standalone
 > bundler exports, dropped 2026-06-19). This file tracks **which template is wired into content
 > production and how** — the "task list" of wired vs not. Brand hard-rules live in
-> [SOUL.md](SOUL.md); production recipes in [PIPELINE_RUNBOOK.md](PIPELINE_RUNBOOK.md).
+> [SOUL.md](../SOUL.md); production recipes in [PIPELINE_RUNBOOK.md](PIPELINE_RUNBOOK.md).
 
 ## ⛔ Rendering guardrails — READ BEFORE choosing a template (Marvin 2026-06-22)
 
@@ -19,6 +19,12 @@ broken poll template). Three rules:
      fills it. **Never auto-select it.** Comparison/poll angles → carousel deck instead.
    - ⚠️ **static-callout** needs a SHORT `STAT` (e.g. "14.9%"); a sentence overflows it (that's why
      `quote` → story-reel). `story-product` needs the full product token set.
+   - ✅ **product-use** (`product-use-{light,dark}`, 1080×1350, added 2026-06-24, Marvin-approved) — the
+     **PRODUCT-USE / "what it is" card** (NOT an announcement): real SKU photo CENTERED in the middle, text
+     BELOW it. Tokens: `BRAND_NAME / EYEBROW / COMPOUND / PRODUCT_IMAGE (product_images.file_uri) /
+     DESCRIPTOR / DESCRIPTION / SPEC1 / SPEC2 / RUO_LINE / HANDLE`. Author the token set directly (not
+     auto-filled by copywriter). Use REAL photos only — see [[acme-product-card-rules]]. Announcements
+     still use `story-product`; photoless compounds (GHK-Cu, NAD+, MOTS-c, Semax) → centered `story-reel`.
 
 2. **Long copy must not collide with fixed layout.** Templates that pin the body at a fixed `top:`
    overlap when a headline wraps. `carousel-{dark,light}` is now a top-anchored **flow** column
