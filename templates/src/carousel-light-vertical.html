@@ -35,7 +35,7 @@
 
   <!-- Content column, VERTICALLY CENTERED in the tall frame. eyebrow → headline → hairline → body;
        overflow clips a very long body instead of colliding with the footer. -->
-  <div style="position: absolute; top: 260px; left: 84px; right: 84px; bottom: 300px; display: flex; flex-direction: column; justify-content: center; overflow: hidden;">
+  <div style="position: absolute; top: 260px; left: 84px; right: 84px; bottom: 380px; display: flex; flex-direction: column; justify-content: center; overflow: hidden;">
     <div style="font-family: 'DM Mono', monospace; font-size: 26px; letter-spacing: 0.24em; color: #2D6A4A; text-transform: uppercase;">{{EYEBROW}}</div>
 
     <h1 style="margin: 26px 0 0 0; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 88px; line-height: 1.07; letter-spacing: -0.02em; color: #1A2820;">
@@ -50,10 +50,19 @@
   </div>
 
   <!-- Footer: swipe indicator + handle -->
-  <div style="position: absolute; bottom: 120px; left: 84px; right: 84px; display: flex; align-items: center; justify-content: space-between;">
+  <div style="position: absolute; bottom: 180px; left: 84px; right: 84px; display: flex; align-items: center; justify-content: space-between;">
     <span style="font-family: 'DM Mono', monospace; font-size: 24px; letter-spacing: 0.14em; color: #6B8F7A; text-transform: uppercase;">{{SWIPE_LABEL}}</span>
     <span style="font-family: 'DM Mono', monospace; font-size: 24px; letter-spacing: 0.18em; color: #2D6A4A;">{{HANDLE}}</span>
   </div>
+
+  <!-- Persistent Waitlist banner — MANDATORY on the bottom of EVERY slide (brand rule).
+       The visible URL is the on-image CTA; the clickable link lives in every caption. -->
+  <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 104px; background: #1A2E1E; display: flex; align-items: center; justify-content: center; gap: 18px;">
+    <span style="font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 30px; letter-spacing: 0.16em; color: #F2EDE4; text-transform: uppercase;">Join the Waitlist</span>
+    <span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 50%; background: #3D9E6E; opacity: 1;"></span>
+    <span style="font-family: 'DM Mono', monospace; font-size: 28px; letter-spacing: 0.03em; color: #9FBFAC;">acmelabs.co/waitlist</span>
+  </div>
+
 
 </div>
 

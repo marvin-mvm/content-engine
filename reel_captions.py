@@ -90,13 +90,22 @@ def _frac_words(frac: str) -> str:
     return " ".join(_ONES[int(d)] for d in frac)
 
 
+# Brand-name pronunciation: "ACME" is voiced normally (AK-mee); "Labs" is already correct.
+# Display/caption text keeps "ACME".
+BRAND_SPOKEN = "Acme"   # brand name for the voiceover (spoken normally)
+_BRAND_RE = re.compile(r"\bACME\b", re.IGNORECASE)
+
+
 def tts_normalize(text: str) -> str:
-    """Rewrite the SPOKEN text so Kokoro voices figures correctly. Display text is unaffected.
+    """Rewrite the SPOKEN text so Kokoro voices figures AND the brand name correctly.
+    Display text is unaffected.
+      ACME -> 'Acme'  (brand name; "Labs" left as-is)
       2.5%  -> 'two point five percent'      1.9%  -> 'one point nine percent'
       15%   -> 'fifteen percent'             2.4   -> 'two point four'
       5mg   -> '5 milligrams'  (em/en dash -> comma so the VO pauses, not slurs).
     Only number/percent/unit tokens are expanded; acronyms Kokoro already says fine
     (GLP-1, GIP, HbA1c, SURPASS-2) are left alone."""
+    text = _BRAND_RE.sub(BRAND_SPOKEN, text)   # brand pronunciation for the voiceover
     t = re.sub(r"(\d+)\.(\d+)\s*%", lambda m: f"{_int_words(int(m.group(1)))} point {_frac_words(m.group(2))} percent", text)
     t = re.sub(r"(\d+)\s*%", lambda m: f"{_int_words(int(m.group(1)))} percent", t)
     t = re.sub(r"(\d+)\.(\d+)", lambda m: f"{_int_words(int(m.group(1)))} point {_frac_words(m.group(2))}", t)

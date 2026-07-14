@@ -81,6 +81,11 @@ Health, never targeted here. v2 = Labs-only.)
 - **Compliance**: never "treats/cures/heals", never weight-loss promises ("lose 20 lbs", "melts fat"),
   never imply a physician acts for Acme, always RUO footer ("For research use only — not for human
   consumption.") on every Labs post. Framed as research only. The publish gate **blocks** violations.
+- **Waitlist CTA (every post)**: on-image CTA button/banner reads **"Join the Waitlist"** (`CTA_LABEL =
+  JOIN THE WAITLIST`); **every caption expansion** includes **`Join our Waitlist → acmelabs.co/waitlist`**.
+  Enforced by `engine.ensure_waitlist()` + `compliance.waitlist_present()`.
+- **Brand pronunciation (spoken content)**: "ACME" is pronounced normally (AK-mee); "Labs" normal.
+  Auto for reel VO via `reel_captions.tts_normalize()`. Display text keeps "ACME".
 - **Branding**: forest-green/cream palette only (no white bg, no gold/red/purple); fonts = DM Sans +
   Cormorant Garamond Italic (emphasis) + DM Mono (data). **Dark/light by slot**: morning (science,
   stack) = light, midday/evening (trending, proof, founder) = dark.

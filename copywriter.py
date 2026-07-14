@@ -82,12 +82,12 @@ BRANDS = {
 # `x` is an alias of `twitter` (the brief/publish layer uses "x"; Blotato uses
 # "twitter"). The legacy 4 platforms keep their prior behavior (backward-compatible).
 PLATFORM_SHAPES = {
-    "instagram": "Instagram: a hook line, then a 2–3 sentence payoff, then \"Save this.\", "
-                 "then a rotating CTA. Scannable and conversational.",
-    "tiktok": "TikTok: ONE punchy hook sentence and a punchy CTA — very short. "
-              "Up to 5 hashtags in the body is fine.",
+    "instagram": "Instagram: a hook line, then a 2–3 sentence payoff, then the waitlist CTA "
+                 "\"Join our Waitlist → acmelabs.co/waitlist\". Scannable and conversational.",
+    "tiktok": "TikTok: ONE punchy hook sentence, then the waitlist CTA "
+              "\"Join our Waitlist → acmelabs.co/waitlist\" — very short. Up to 5 hashtags in the body is fine.",
     "youtube": "YouTube Shorts: front-load the compound/topic name; a 2–3 sentence "
-               "description; end on a subscribe CTA.",
+               "description; end on the waitlist CTA \"Join our Waitlist → acmelabs.co/waitlist\".",
     "twitter": "X (Twitter): ONE bold, specific claim or finding in 280 characters or fewer. "
                "ZERO hashtags. A single opinion, not a list. Sparing emoji.",
     "threads": "Threads: a casual, conversational, slightly more personal repurpose of the "
@@ -153,7 +153,7 @@ OVERLAY COPY RULES (for the on-image template):
 phrase rendered in italic green — make it the most evocative 1–3 words. Lines 1 and \
 3 are plain. Total headline ≤ 8 words. No period unless it's a question.
 - SUBTITLE_TEXT: one line, ≤ 7 words, often "Term · Term · Term" format.
-- CTA_LABEL: 2–3 words, imperative, ALL CAPS (e.g. "READ THE COA", "EXPLORE PROTOCOL").
+- CTA_LABEL: the pre-launch CTA button/banner — ALWAYS "JOIN THE WAITLIST" (ALL CAPS, actionable).
 
 You output ONLY a JSON object — no prose, no code fences — with exactly these keys:
 {
@@ -320,7 +320,7 @@ def extract_json(text):
 # ── Compliance enforcement (safety net beyond the prompt) ────────────────────
 
 # Compliance (RED/YELLOW) — single source of truth is compliance.py (Red/Yellow/Green framework).
-from compliance import red_hits, yellow_hits, say_instead, PROMPT_RULES
+from compliance import red_hits, yellow_hits, audience_flags, say_instead, PROMPT_RULES
 # Auto-retry budget when the model emits a RED claim or non-JSON (the publish gate is the hard
 # backstop; this just closes the gap so produced copy is usually clean on the first pass).
 MAX_COMPLIANCE_RETRIES = 2
@@ -355,6 +355,13 @@ def enforce(result, args, brand):
     if yl:
         warnings.append(f"caption efficacy verb(s) {yl} need YELLOW framing "
                         "('research subjects' + 'may'/'research suggests')")
+    # AUDIENCE: consumer-directed phrasings anywhere (caption OR slide copy) must address
+    # research professionals, never an individual end-user (Marvin's colleagues 2026-07).
+    for where, t in texts:
+        af = audience_flags(t)
+        if af:
+            warnings.append(f"AUDIENCE — {where} addresses consumers not researchers: {af} "
+                            "(re-point to 'research subjects' / 'most researchers' / 'the literature')")
 
     # Caption must not open with "I", brand name, or a generic lead-in
     first = caption.lstrip().split(maxsplit=1)
@@ -452,6 +459,10 @@ def enforce_carousel(result, args, brand):
     yl = yellow_hits(caption)
     if yl:
         warnings.append(f"caption efficacy verb(s) {yl} need YELLOW framing ('research subjects' + hedge)")
+    af = audience_flags(caption)
+    if af:
+        warnings.append(f"AUDIENCE — caption addresses consumers not researchers: {af} "
+                        "(re-point to 'research subjects' / 'most researchers')")
     first = caption.lstrip().split(maxsplit=1)
     if first and first[0].strip(".,!:").lower() in {"i", "acme"}:
         warnings.append(f"caption opens with disallowed word: {first[0]!r}")

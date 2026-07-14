@@ -271,6 +271,9 @@ def build_captions(job_dir: Path, force: bool = False) -> dict | None:
         yl = e.yellow_hits(text)
         if yl:
             warnings.append(f"[{p}] efficacy verb(s) {yl} need research-subject framing ('may'/'research suggests')")
+        af = e.audience_flags(text)
+        if af:
+            warnings.append(f"[{p}] AUDIENCE — consumer-directed {af}; address research professionals ('research subjects'/'most researchers')")
         if p == "x" and (len(text) > e.X_LIMIT or "#" in text):
             warnings.append(f"[{p}] X shape off ({len(text)} chars / hashtags) — check")
         captions[p] = text

@@ -369,6 +369,25 @@ physician); **may run paid**; no promised outcomes; GLP-1 content carries no spe
 only; X — most lenient, still no direct medical claims. **When in doubt, cut it out** (reject →
 flag Devon).
 
+**Audience — write for RESEARCH PROFESSIONALS, never a consumer (MANDATORY, colleagues 2026-07):**
+every line addresses researchers / clinicians / investigators evaluating a compound, NOT an individual
+who will take it. Never "newcomers", "beginners", "when you take", "your dose/results", "start low and
+slow", "you'll feel…". Re-point to the field — ✗ *"a timing problem most newcomers don't see coming"* →
+✓ *"a timing consideration most researchers are not yet aware of."* Enforced at generation by
+`compliance.PROMPT_RULES`; flagged at review by `compliance.audience_flags()` (scans caption + every slide).
+
+**Waitlist CTA + banner (every post, reel, carousel — MANDATORY, colleagues 2026-07):** a persistent
+waitlist **banner sits at the bottom of every rendered slide/frame** — "Join the Waitlist ·
+acmelabs.co/waitlist" (baked into the carousel + static template families). A **clickable link to the
+ACME Labs site** appears on the last slide / in every video and in **every caption expansion**
+(`Join our Waitlist → acmelabs.co/waitlist`). On-image CTA button reads **"Join the Waitlist"**
+(`CTA_LABEL = JOIN THE WAITLIST`). Landing URL always `acmelabs.co/waitlist`. Enforced by the template
+banner + `engine.ensure_waitlist()`; detection net `compliance.waitlist_present()`.
+
+**Brand pronunciation (spoken content):** "ACME" is pronounced normally (AK-mee); "Labs" is normal.
+Auto-applied for reel VO in `reel_captions.tts_normalize()`.
+Display/caption text keeps "ACME". See [SOUL.md](../SOUL.md) → Voice & Tone.
+
 ---
 
 ## 10. Accounts & environment (setup checklist)

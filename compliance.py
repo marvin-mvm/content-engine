@@ -19,6 +19,27 @@ import re
 RUO_SENTENCE = "For research use only — not for human consumption."
 RUO_RE = re.compile(r"research use only|not for human consumption|\bRUO\b", re.IGNORECASE)
 
+# ── Pre-launch WAITLIST CTA (Marvin 2026-06-28; colleagues 2026-07) ───────────────
+# The waitlist link must ride EVERY caption expansion (the tap-to-expand "…more" body),
+# worded "Join our Waitlist", AND be the on-image CTA button/banner worded "Join the
+# Waitlist". engine.ensure_waitlist() pins it into captions; this is the detection net.
+WAITLIST_LINK = "acmelabs.co/waitlist"
+WAITLIST_CAPTION_CTA = f"Join our Waitlist → {WAITLIST_LINK}"     # every caption expansion
+WAITLIST_BUTTON = "Join the Waitlist"                            # on-image CTA button/banner
+WAITLIST_RE = re.compile(r"acmelabs\.co/waitlist", re.IGNORECASE)
+
+# ── Brand-name pronunciation (colleagues 2026-07) ─────────────────────────────────
+# Any spoken content (voiceover OR avatar/Nova) must pronounce "ACME" as "AK-mee":
+#   standard pronunciation ·  · ends "uh".
+# "Labs" is already correct. reel_captions.tts_normalize() respells it for Kokoro; avatar
+# scripts must be respelled by hand. Display/caption text always keeps "ACME".
+BRAND_SPOKEN_HINT = "ACME is pronounced normally (AK-mee); Labs is normal."
+
+
+def waitlist_present(text: str) -> bool:
+    """True if the pre-launch waitlist link rides this caption (must be in EVERY caption expansion)."""
+    return bool(WAITLIST_RE.search(text or ""))
+
 # ── 🔴 RED — never use (hard block) ──────────────────────────────────────────────
 # Disease/condition action verbs (every tense) + the framework's named banned outcome
 # claims + customer-directed outcomes ("…your skin") + testimonials + hype words.
@@ -115,6 +136,33 @@ def say_instead(hit: str) -> str | None:
     return None
 
 
+# ── Audience discipline (Marvin's colleagues 2026-07) ─────────────────────────────
+# Every Acme post speaks to RESEARCH PROFESSIONALS / clinicians, never to an individual
+# end-user who will take the compound. Consumer-directed phrasings ("newcomers", "start low
+# and slow", "your results", "you'll feel…") break the research-use-only posture — the exact
+# defect flagged on IG p/DaqCceVkQBz: "a timing problem most newcomers don't see coming" should
+# read "…most researchers are not aware of". ADVISORY lint (context matters) surfaced in warnings
+# so the reviewer re-points the copy; NOT a hard RED block.
+AUDIENCE_RE = re.compile(
+    r"\bnew\s?comers?\b|\bbeginners?\b|\bnovices?\b|new to peptides|"
+    r"start low(?:,?\s*(?:and\s*|go\s*)slow)|go low and slow|ease into\b|"
+    r"don'?t see (?:it )?coming|sneaks? up on you|catch(?:es)? you off guard|"
+    r"\byour (?:dose|dosage|protocol|cycle|stack|results?|routine|regimen|body)\b|"
+    r"how (?:to|much) (?:to )?(?:use|take|dose)|when (?:to|you) take|if you take|"
+    r"you'?ll (?:feel|notice|see|get)|helps? you\b|works? for you\b",
+    re.IGNORECASE,
+)
+
+
+def audience_flags(text: str) -> list[str]:
+    """Consumer-directed phrasings that must be re-pointed at research professionals.
+    Advisory (deduped, lowercased): Acme copy addresses researchers / clinicians /
+    investigators evaluating a compound — never an individual who will take it. See
+    PROMPT_RULES → AUDIENCE. Rewrite toward 'research subjects', 'investigators',
+    'most researchers', 'the literature'."""
+    return sorted({m.group(0).lower() for m in AUDIENCE_RE.finditer(text or "")})
+
+
 # ── Prompt block — the same framework, written for the LLM (prevention layer) ────
 # Injected verbatim into copywriter.py's system prompts so it GENERATES compliant copy
 # (the regex above is the detection safety-net behind it).
@@ -135,4 +183,20 @@ COMPLIANCE — Marketing Claims Framework (Red/Yellow/Green). HARD STOPS, no exc
 🟢 WRITE FREELY (no claim, no risk): mechanism of action, COA / purity / third-party testing / specs,
    plain-language research education (summarise studies without promising a customer outcome), longevity
    science, founder/brand story. Make this the bulk of the copy.
-Labs = research-use-only framing throughout; never personal dosing or medical advice; never name a competitor."""
+Labs = research-use-only framing throughout; never personal dosing or medical advice; never name a competitor.
+
+MANDATORY on EVERY output (Marvin's colleagues 2026-07):
+🎯 AUDIENCE — write for RESEARCH PROFESSIONALS, never a consumer. Every line addresses researchers /
+   clinicians / investigators evaluating a compound — NOT an individual who will take it. Never
+   "newcomers", "beginners", "when you take", "your dose/results", "start low and slow", "you'll feel…".
+   Re-point to the field:  ✗ "a timing problem most NEWCOMERS don't see coming"  →  ✓ "a timing
+   consideration most RESEARCHERS are not yet aware of".  Prefer "in study/research subjects",
+   "investigators", "the literature", "research context".
+📣 WAITLIST CTA + BANNER — on EVERY post, reel and carousel:
+   • A waitlist BANNER sits at the BOTTOM of every rendered frame/slide, reading "Join the Waitlist ·
+     acmelabs.co/waitlist" (baked into the templates — never omit or cover it).
+   • A clickable link to acmelabs.co/waitlist (→ the ACME Labs site) appears on the LAST slide and in
+     EVERY video/reel, plus in every caption expansion: "Join our Waitlist → acmelabs.co/waitlist".
+   • On-image CTA button/banner: actionable, reads "Join the Waitlist" (CTA_LABEL = "JOIN THE WAITLIST").
+     Landing URL is always acmelabs.co/waitlist.
+🔊 BRAND PRONUNCIATION — "ACME" is pronounced normally (AK-mee); "Labs" is normal. Keep "ACME" in display text."""

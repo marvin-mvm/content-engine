@@ -84,7 +84,7 @@ DEFAULT_CAPS = {"copy": 30, "searchapi": 20, "apify": 3, "reel": 135}
 #    Re-exported so existing callers keep working: e.BANNED / e.RUO_SENTENCE / e.RUO_RE,
 #    plus e.red_hits / e.yellow_hits / e.say_instead for the richer checks.
 from compliance import (  # noqa: F401
-    BANNED, RUO_SENTENCE, RUO_RE, red_hits, yellow_hits, say_instead,
+    BANNED, RUO_SENTENCE, RUO_RE, red_hits, yellow_hits, audience_flags, say_instead,
 )
 X_LIMIT = 280
 
@@ -671,11 +671,14 @@ def ensure_link(text: str, link: str | None) -> str:
     return (text.rstrip() + f"\nCOA: {link}") if text else f"COA: {link}"
 
 
-# Pre-launch WAITLIST CTA — folded into EVERY caption so we're building the list on every post
-# (Marvin 2026-06-28: "we missed putting acmelabs.co/waitlist on every post"). The primary CTA
+# Pre-launch WAITLIST CTA — folded into EVERY caption expansion so we're building the list on
+# every post (Marvin 2026-06-28: "we missed putting acmelabs.co/waitlist on every post";
+# colleagues 2026-07: caption expansion must read "Join our Waitlist" + link). The primary CTA
 # until launch; idempotent so it never double-appends.
 WAITLIST_LINK = "acmelabs.co/waitlist"
-WAITLIST_CTA = f"Join the waitlist → {WAITLIST_LINK}"
+WAITLIST_CTA = f"Join our Waitlist → {WAITLIST_LINK}"        # in EVERY caption expansion
+WAITLIST_BUTTON = "Join the Waitlist"                        # on-image CTA button/banner (actionable)
+WAITLIST_BUTTON_CAPS = "JOIN THE WAITLIST"                   # CTA_LABEL token form (templates render ALL CAPS)
 
 # Canonical caption TAIL ORDER (Marvin 2026-06-29): the CTA line always comes FIRST,
 # the RUO disclaimer is ALWAYS the very last line. Never the other way around.

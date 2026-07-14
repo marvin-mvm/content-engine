@@ -28,7 +28,7 @@
     </div>
   </div>
 
-  <div style="position: absolute; top: 260px; left: 84px; right: 84px; bottom: 300px; display: flex; flex-direction: column; justify-content: center; overflow: hidden;">
+  <div style="position: absolute; top: 260px; left: 84px; right: 84px; bottom: 380px; display: flex; flex-direction: column; justify-content: center; overflow: hidden;">
     <div style="font-family: 'DM Mono', monospace; font-size: 26px; letter-spacing: 0.24em; color: #3D9E6E; text-transform: uppercase;">{{EYEBROW}}</div>
     <h1 style="margin: 26px 0 0 0; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 88px; line-height: 1.07; letter-spacing: -0.02em; color: #F2EDE4;">
       <span style="display: block;">{{HEAD_1}}</span>
@@ -41,10 +41,19 @@
 
   <div aria-hidden="true" style="position: absolute; bottom: 0; left: 0; right: 0; height: 260px; background: linear-gradient(to top, rgba(10, 20, 12, 0.9) 0%, transparent 100%); pointer-events: none;"></div>
 
-  <div style="position: absolute; bottom: 120px; left: 84px; right: 84px; display: flex; align-items: center; justify-content: space-between;">
+  <div style="position: absolute; bottom: 180px; left: 84px; right: 84px; display: flex; align-items: center; justify-content: space-between;">
     <span style="font-family: 'DM Mono', monospace; font-size: 24px; letter-spacing: 0.14em; color: #6B8F7A; text-transform: uppercase;">{{SWIPE_LABEL}}</span>
     <span style="font-family: 'DM Mono', monospace; font-size: 24px; letter-spacing: 0.18em; color: #7BA086;">{{HANDLE}}</span>
   </div>
+
+  <!-- Persistent Waitlist banner — MANDATORY on the bottom of EVERY slide (brand rule).
+       The visible URL is the on-image CTA; the clickable link lives in every caption. -->
+  <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 104px; background: #3D9E6E; display: flex; align-items: center; justify-content: center; gap: 18px;">
+    <span style="font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 30px; letter-spacing: 0.16em; color: #0F1A0F; text-transform: uppercase;">Join the Waitlist</span>
+    <span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 50%; background: #0F1A0F; opacity: 0.5;"></span>
+    <span style="font-family: 'DM Mono', monospace; font-size: 28px; letter-spacing: 0.03em; color: #0F1A0F;">acmelabs.co/waitlist</span>
+  </div>
+
 </div>
 </body>
 </html>

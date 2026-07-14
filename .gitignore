@@ -7,6 +7,8 @@
 # --- Secrets & credentials (NEVER commit) ---
 .env
 .env.*
+# the template carries key NAMES only (no values) — safe to track
+!.env.example
 *credentials*.json
 acme-google-credentials.json
 
