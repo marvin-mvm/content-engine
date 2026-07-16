@@ -1,6 +1,6 @@
 # Content Engine
 
-An autonomous, human-gated social-content production system that researched, wrote, rendered, and published multi-format content (posts, carousels, reels, stories) for a real DTC wellness brand — running in production on a five-slot daily schedule across Instagram, TikTok, X, Facebook, and YouTube.
+An autonomous, human-gated social-content production system that researched, wrote, rendered, and published multi-format content (posts, carousels, reels, stories) for a real DTC e-commerce brand — running in production on a five-slot daily schedule across Instagram, TikTok, X, Facebook, and YouTube.
 
 > **Provenance:** this is the real production system, published with the client's branding replaced by the placeholder **"Acme"** and people replaced by pseudonyms. Brand assets (logos, product photography, licensed fonts) and agent-identity files were removed. Everything else — code, tests, docs, and the curated commit history — is the system as it ran.
 
