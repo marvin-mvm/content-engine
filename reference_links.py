@@ -32,8 +32,19 @@ def _ts() -> str:
 
 
 def _norm(url: str) -> str:
-    """Normalise for dedup: drop the query string (?img_index=N etc.) + trailing slash, lowercase."""
-    return (url or "").split("?")[0].rstrip("/").lower()
+    """Normalise for dedup: lowercase, drop trailing slash + query string (?img_index=N etc.) —
+    EXCEPT YouTube's video id, which lives in the query as ?v=. Without that carve-out every
+    youtube.com/watch?v=<id> URL collapses to bare '.../watch' and any one used link makes ALL
+    future YouTube links falsely read as 'used'. youtu.be/<id> and /shorts/<id> keep their id in
+    the path already, so the plain split handles them."""
+    u = (url or "").strip()
+    low = u.lower()
+    if "youtube.com/watch" in low:
+        import urllib.parse as _up
+        vid = _up.parse_qs(_up.urlparse(u).query).get("v", [""])[0]
+        if vid:
+            return f"https://www.youtube.com/watch?v={vid}".lower()
+    return low.split("?")[0].rstrip("/")
 
 
 def _platform(url: str) -> str:

@@ -163,6 +163,23 @@ def audience_flags(text: str) -> list[str]:
     return sorted({m.group(0).lower() for m in AUDIENCE_RE.finditer(text or "")})
 
 
+# Instagram rejects any post carrying more than 5 hashtags ("Instagram allows a maximum of
+# 5 hashtags per post"). The publisher surfaces this as a publish error, so trim the IG caption
+# BEFORE scheduling. TikTok/Facebook/X have no such cap.
+IG_HASHTAG_MAX = 5
+HASHTAG_RE = re.compile(r"(?<!\w)#\w+")
+
+
+def hashtag_count(text: str) -> int:
+    """Count #hashtags in a caption (for the Instagram ≤5 limit)."""
+    return len(HASHTAG_RE.findall(text or ""))
+
+
+def ig_hashtags_ok(text: str) -> bool:
+    """False if an Instagram caption would be rejected for >5 hashtags."""
+    return hashtag_count(text) <= IG_HASHTAG_MAX
+
+
 # ── Prompt block — the same framework, written for the LLM (prevention layer) ────
 # Injected verbatim into copywriter.py's system prompts so it GENERATES compliant copy
 # (the regex above is the detection safety-net behind it).
@@ -184,6 +201,7 @@ COMPLIANCE — Marketing Claims Framework (Red/Yellow/Green). HARD STOPS, no exc
    plain-language research education (summarise studies without promising a customer outcome), longevity
    science, founder/brand story. Make this the bulk of the copy.
 Labs = research-use-only framing throughout; never personal dosing or medical advice; never name a competitor.
+📱 INSTAGRAM: max 5 hashtags per post (IG rejects more). TikTok/Facebook/X have no cap — keep IG captions ≤5 tags.
 
 MANDATORY on EVERY output (Marvin's colleagues 2026-07):
 🎯 AUDIENCE — write for RESEARCH PROFESSIONALS, never a consumer. Every line addresses researchers /
