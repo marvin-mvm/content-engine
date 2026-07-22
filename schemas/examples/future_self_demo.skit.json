@@ -1,0 +1,29 @@
+{
+  "name": "future_self_demo",
+  "source_url": "https://www.instagram.com/reel/EXAMPLE/",
+  "aspect_ratio": "9:16",
+  "model": "veo3_1",
+  "model_variant": "veo-3-1-fast",
+  "quality": "high",
+  "base_prompt": "The man from the reference photo talks directly to the camera, casual handheld selfie video, eye-level medium close-up",
+  "wardrobe": "wearing a white ribbed tank top with a small black clip-on lav microphone on his chest",
+  "safety_cues": "wholesome, tasteful, fully dressed",
+  "characters": {
+    "P": { "ref_ts": 1,  "room": "plain room with a green wall" },
+    "U": { "ref_ts": 6,  "room": "room with a wood-slat wall" },
+    "O": { "ref_ts": 32, "room": "room with a wood-slat wall" }
+  },
+  "shots": [
+    { "char": "P", "line": "No, don't do it.", "dur": 4, "delivery": "holding a syringe, looking alarmed", "label": "Choosing Your Future Self" },
+    { "char": "U", "line": "I'm the version that didn't do peptides. Trust me.", "dur": 6, "delivery": "older, balding, gaunt and tired, raspy", "label": "Unoptimized Version" },
+    { "char": "U", "line": "The government is trying to kill you.", "dur": 4, "delivery": "paranoid, wide-eyed" },
+    { "char": "O", "line": "Oh, shut up. Do the peptides. Definitely do the peptides.", "dur": 6, "delivery": "confident and smug", "label": "Optimized Version" },
+    { "char": "P", "line": "Okay, now who's this guy?", "dur": 4, "delivery": "confused, turning to look, hands free" },
+    { "char": "O", "line": "I'm the version of you that continued to optimize. And honestly, we just kept getting younger, more jacked, and rich.", "dur": 8, "delivery": "smug and proud" },
+    { "char": "P", "line": "I mean, that does sound pretty awesome. And this guy looks like shit.", "dur": 6, "delivery": "amused, gesturing, hands free" },
+    { "char": "P", "line": "Okay, so you're telling me nothing goes wrong with this whole peptide thing?", "dur": 6, "delivery": "skeptical, hands free" },
+    { "char": "O", "line": "Oh no, tons of stuff goes wrong. Just not for us.", "dur": 6, "delivery": "casual and confident" },
+    { "char": "O", "line": "Because we never took any of the contaminated cheap stuff.", "dur": 4, "delivery": "matter-of-fact" },
+    { "char": "P", "line": "Hmm. Yeah.", "dur": 4, "delivery": "considering, nodding, hands free" }
+  ]
+}
